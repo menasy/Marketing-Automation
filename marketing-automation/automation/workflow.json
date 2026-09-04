@@ -1,0 +1,241 @@
+{
+  "name": "Marketing Automation Daily Executive Briefing & Anomaly Alert Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        },
+        "options": {
+          "timezone": "Europe/Istanbul"
+        }
+      },
+      "id": "1",
+      "name": "Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v1/pipeline/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "2",
+      "name": "HTTP Request Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-status",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "IF Condition Node",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst summary = data.briefing_summary || 'Günlük pazarlama performansı brifingi başarıyla oluşturuldu.';\nconst anomalyCount = data.anomalies_count !== undefined ? data.anomalies_count : 0;\nconst topFindings = data.top_3_findings || [];\nconst generatedAt = new Date().toISOString();\n\nconst severityEmoji = { 'CRITICAL': '🔴', 'HIGH': '🟠', 'MEDIUM': '🟡', 'LOW': '🟢' };\n\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"📊 Günlük Pazarlama Otomasyonu Yönetici Brifingi\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"context\",\n    \"elements\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Zaman:* ${generatedAt} | *Durum:* Başarılı | *Toplam Anomali:* ${anomalyCount}`\n      }\n    ]\n  },\n  { \"type\": \"divider\" },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Yönetici Özeti:*\\n${summary}`\n    }\n  }\n];\n\nif (topFindings.length > 0) {\n  blocks.push({\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*🎯 Top 3 Kritik Operasyonel Bulgular:*\"\n    }\n  });\n\n  topFindings.forEach((f, idx) => {\n    const emoji = severityEmoji[f.severity] || '⚪';\n    const findingText = `${emoji} *Bulgu #${idx + 1}: ${f.campaign_name}*\\n` +\n      `📌 *Platform:* ${f.platform} | *Ülke:* ${f.country} | *Skor:* ${f.score}\\n` +\n      `📊 *Metrik Değişimi:* ${f.metric_change}\\n` +\n      `🔍 *Teşhis:* ${f.issue_type}\\n` +\n      `⚡ *Aksiyon:* ${f.operational_action}`;\n\n    blocks.push({\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": findingText\n      }\n    });\n\n    if (idx < topFindings.length - 1) {\n      blocks.push({ \"type\": \"divider\" });\n    }\n  });\n}\n\nblocks.push({ \"type\": \"divider\" });\n\nreturn [{ json: { blocks, summary, anomalies_count: anomalyCount, generated_at: generatedAt, top_3_findings: topFindings } }];"
+      },
+      "id": "4",
+      "name": "Format Slack Success Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        950,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ blocks: $json.blocks }) }}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "Send Slack Briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputJson = $input.first() ? $input.first().json : {};\nconst executionId = inputJson.execution_id || inputJson.executionId || $execution.id;\nconst failedStage = inputJson.failed_stage || inputJson.stage || 'Pipeline Execution';\nconst errorMessage = inputJson.error || inputJson.message || 'Unknown pipeline execution failure';\nconst timestamp = new Date().toISOString();\n\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"\ud83d\udea8 CRITICAL ALERT: Pipeline Execution Failed\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"fields\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Execution ID:* ${executionId}`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Channel:* #marketing-alerts-critical`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Failed Stage:* ${failedStage}`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Timestamp:* ${timestamp}`\n      }\n    ]\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Error Details:*\\n\\`\\`\\`${errorMessage}\\`\\`\\``\n    }\n  }\n];\n\nreturn [{ json: { channel: \"#marketing-alerts-critical\", blocks, execution_id: executionId, failed_stage: failedStage, error_message: errorMessage, timestamp } }];"
+      },
+      "id": "6",
+      "name": "Format Slack Emergency Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        950,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: '#marketing-alerts-critical', blocks: $json.blocks }) }}",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Send Emergency Alert to #marketing-alerts-critical",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request Node": {
+      "main": [
+        [
+          {
+            "node": "IF Condition Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Condition Node": {
+      "main": [
+        [
+          {
+            "node": "Format Slack Success Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Slack Emergency Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack Success Message": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack Emergency Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Emergency Alert to #marketing-alerts-critical",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
