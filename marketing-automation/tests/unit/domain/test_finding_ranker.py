@@ -111,7 +111,10 @@ def test_ctr_collapse_with_rising_cpa_classified_as_performance() -> None:
     # New fields: metric_change and operational_action
     assert "CTR" in finding.metric_change
     assert "CPA" in finding.metric_change
-    assert "bütçeyi" in finding.operational_action.lower() or "kısın" in finding.operational_action.lower()
+    assert (
+        "bütçeyi" in finding.operational_action.lower()
+        or "kısın" in finding.operational_action.lower()
+    )
 
 
 def test_multiple_anomalies_same_campaign_merged_into_single_finding() -> None:

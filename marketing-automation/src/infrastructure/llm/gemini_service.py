@@ -35,7 +35,11 @@ class GeminiService(ILLMService):
         """Generates executive briefing grounded on detected anomalies using Google Gemini API."""
         if not self._api_key:
             logger.warning("Gemini API key missing. Falling back to deterministic briefing.")
-            return self._build_fallback_briefing(anomalies)
+            missing_key_reason = (
+                "⚠️ [API KEY EKSİK] Gemini API anahtarı tanımlanmamış. "
+                "Pazarlama otomasyonu kural tabanlı deterministik özeti gösterilmektedir."
+            )
+            return self._build_fallback_briefing(anomalies, reason=missing_key_reason)
 
         if not anomalies:
             return ExecutiveBriefing(
@@ -64,7 +68,11 @@ class GeminiService(ILLMService):
 
             if not raw_text:
                 logger.error("Gemini API returned an empty response.")
-                return self._build_fallback_briefing(anomalies)
+                empty_reason = (
+                    "⚠️ [BOŞ YANIT] Gemini AI servisi boş yanıt döndürdü. "
+                    "Kural tabanlı deterministik özet gösterilmektedir."
+                )
+                return self._build_fallback_briefing(anomalies, reason=empty_reason)
 
             # Deterministic post-validation cross-examining against source anomalies
             is_valid, discrepancies, validated_markdown = self._validator.validate(
@@ -83,7 +91,7 @@ class GeminiService(ILLMService):
             recommended_actions = self._extract_recommended_actions(validated_markdown)
             if not recommended_actions:
                 recommended_actions = [
-                    "Kritik CPA artışı veya ROAS düşüşü olan kampanyaların günlük bütçelerini denetleyin.",
+                    "Kritik CPA artışı veya ROAS düşüşü olan kampanyaların bütçelerini denetleyin.",
                     "Kreatif performanslarını ve açılış sayfalarını kontrol edin.",
                     "Dönüşüm ilişkilendirme ve piksel izleme sistemlerini doğrulayın.",
                 ]
@@ -96,8 +104,35 @@ class GeminiService(ILLMService):
             )
 
         except Exception as err:
+            err_str = str(err).lower()
             logger.error(f"Google Gemini API error: {err}. Falling back to deterministic briefing.")
-            return self._build_fallback_briefing(anomalies)
+            if (
+                "429" in err_str
+                or "quota" in err_str
+                or "rate_limit" in err_str
+                or "resource_exhausted" in err_str
+            ):
+                reason = (
+                    "⚠️ [API LİMİTİ AŞILDI (HTTP 429)] Google Gemini kota sınırına ulaşıldı. "
+                    "Lütfen 1 dakika sonra tekrar deneyin."
+                )
+            elif (
+                "api_key" in err_str
+                or "unauthorized" in err_str
+                or "401" in err_str
+                or "invalid" in err_str
+            ):
+                reason = (
+                    "⚠️ [GEÇERSİZ API KEY (HTTP 401)] Gemini API anahtarı doğrulanamadı. "
+                    "Kural tabanlı yedek özet gösterilmektedir."
+                )
+            else:
+                reason = (
+                    "⚠️ [LLM SERVİSİ YANIT VEREMEDİ] Gemini AI bağlantısı kurulamadı. "
+                    "Kural tabanlı yedek özet gösterilmektedir."
+                )
+
+            return self._build_fallback_briefing(anomalies, reason=reason)
 
     def _extract_summary(self, markdown_text: str) -> str:
         """Extracts executive summary paragraph from generated markdown."""
@@ -107,18 +142,53 @@ class GeminiService(ILLMService):
 
         for line in lines:
             stripped = line.strip()
-            if stripped.startswith("## Executive Summary") or stripped.startswith("## Yönetici Özeti") or stripped.startswith("## Özet"):
+            header_clean = stripped.lstrip("#* ").strip().lower()
+            if header_clean in (
+                "executive summary",
+                "yönetici özeti",
+                "özet",
+                "executive briefing",
+                "yönetici brifingi",
+            ) or header_clean.startswith("executive summary") or (
+                header_clean.startswith("yönetici özeti")
+            ):
                 in_summary = True
                 continue
-            if in_summary and stripped.startswith("## "):
+            if in_summary and stripped.startswith("#"):
                 break
             if in_summary and stripped:
                 summary_lines.append(stripped)
 
         if summary_lines:
-            return " ".join(summary_lines)
+            raw_sum = " ".join(summary_lines)
+        else:
+            # Fallback to first non-header paragraph if header parser didn't match
+            non_header_paragraphs = [
+                p.strip() for p in markdown_text.split("\n\n")
+                if p.strip() and not p.strip().startswith("#")
+            ]
+            if non_header_paragraphs:
+                raw_sum = non_header_paragraphs[0]
+            else:
+                return (
+                    "⚠️ [KURAL TABANLI YEDEK] Gemini LLM servisi yanıt veremedi. "
+                    "Pazarlama otomasyonu deterministik özeti gösterilmektedir."
+                )
 
-        return "Google Gemini tarafından pazarlama otomasyonu brifingi başarıyla oluşturuldu."
+        # Sanitize raw markdown bullet/bold tags like "- **Özet:**"
+        cleaned_lines: list[str] = []
+        for line in raw_sum.splitlines():
+            s = line.strip()
+            if s.startswith("- **") or s.startswith("* **"):
+                parts = s.split("**", 2)
+                if len(parts) >= 3:
+                    s = parts[2].lstrip(": ").strip()
+            elif s.startswith("- ") or s.startswith("* "):
+                s = s[2:].strip()
+            if s:
+                cleaned_lines.append(s)
+
+        return " ".join(cleaned_lines) if cleaned_lines else raw_sum
 
     def _extract_recommended_actions(self, markdown_text: str) -> list[str]:
         """Extracts recommended actions bullet points from generated markdown."""
@@ -128,28 +198,40 @@ class GeminiService(ILLMService):
 
         for line in lines:
             stripped = line.strip()
-            if stripped.startswith("## Recommended Actions") or stripped.startswith("## Önerilen Aksiyonlar"):
+            header_clean = stripped.lstrip("#* ").strip().lower()
+            if (
+                "recommended action" in header_clean
+                or "önerilen aksiyon" in header_clean
+                or "aksiyonlar" in header_clean
+            ):
                 in_actions = True
                 continue
-            if in_actions and stripped.startswith("## "):
+            if in_actions and stripped.startswith("#"):
                 break
             if in_actions and stripped:
-                if stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("• "):
+                if (
+                    stripped.startswith("- ")
+                    or stripped.startswith("* ")
+                    or stripped.startswith("• ")
+                ):
                     action_lines.append(stripped.lstrip("-*• ").strip())
                 elif stripped:
                     action_lines.append(stripped)
 
         return action_lines
 
-    def _build_fallback_briefing(self, anomalies: list[AnomalyItem]) -> ExecutiveBriefing:
+    def _build_fallback_briefing(
+        self, anomalies: list[AnomalyItem], reason: str | None = None
+    ) -> ExecutiveBriefing:
         """Constructs deterministic fallback briefing when LLM service is unavailable."""
         critical_count = sum(1 for a in anomalies if a.severity.value in ("critical", "high"))
         total_count = len(anomalies)
 
-        summary = (
-            f"Değerlendirilen dönemde reklam kanallarında toplam {total_count} istatistiksel anomali "
-            f"({critical_count} kritik/yüksek derece) tespit edilmiştir."
+        default_reason = (
+            f"⚠️ [DETERMİNİSTİK YEDEK - LLM DEVRE DIŞI] Toplam {total_count} "
+            f"istatistiksel anomali ({critical_count} kritik/yüksek) tespit edilmiştir."
         )
+        summary = reason or default_reason
 
         critical_lines = [
             f"- Kampanya '{a.campaign_name}' ({a.platform.value}): {a.rationale}" for a in anomalies
@@ -187,4 +269,3 @@ class GeminiService(ILLMService):
             ],
             recommended_actions=actions,
         )
-

@@ -29,7 +29,7 @@ def test_operational_report_writer_renders_and_saves_file(tmp_path: Path) -> Non
             evidence_summary="CONVERSIONS changed by -100.0% (current: 0.00, baseline: 50.00)",
             business_impact="Abrupt conversion tracking failure with active spend of $200.00.",
             metric_change="CONVERSIONS: 50.00 → 0.00 (-100%) | SPEND: $200 → $200 (+0%)",
-            operational_action="Google Ads CAPI/Pixel entegrasyonunu kontrol edin, bütçeyi kapatmayın.",
+            operational_action="Google Ads CAPI/Pixel entegrasyonunu kontrol edin.",
             budget_action=BudgetAction.HOLD.value,
             bid_action=BidAction.NO_CHANGE.value,
             creative_action=CreativeAction.NO_ACTION.value,

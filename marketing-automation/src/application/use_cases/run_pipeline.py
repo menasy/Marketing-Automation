@@ -360,9 +360,7 @@ class RunPipelineUseCase:
         top_anomalies: list[str] = []
         for f in top_findings:
             plat = f.platform.value if hasattr(f.platform, "value") else str(f.platform)
-            top_anomalies.append(
-                f"- *{f.campaign_name}* ({plat}/{f.country}): {f.metric_change}"
-            )
+            top_anomalies.append(f"- *{f.campaign_name}* ({plat}/{f.country}): {f.metric_change}")
 
         # Derive recommended_actions from findings if LLM didn't produce them
         if not recommended_actions:
@@ -393,4 +391,3 @@ class RunPipelineUseCase:
             output_files=output_files,
             stage_statuses=stage_statuses,
         )
-

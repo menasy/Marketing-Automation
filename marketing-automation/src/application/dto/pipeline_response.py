@@ -10,10 +10,10 @@ class FindingSummaryDTO(BaseModel):
     platform: str = Field(description="Advertising platform (google_ads, meta_ads)")
     country: str = Field(description="ISO country code of the campaign")
     metric_change: str = Field(
-        description="Human-readable metric delta, e.g. 'Conversions: 140 → 0 (-100%) | Spend: $1,200'"
+        description="Human-readable metric delta, e.g. 'Conversions: 140 → 0 (-100%)'"
     )
     issue_type: str = Field(
-        description="Root-cause classification label (VERİ / TRACKING HATASI vs GERÇEK PERFORMANS SORUNU)"
+        description="Root-cause label (VERİ / TRACKING HATASI vs PERFORMANS SORUNU)"
     )
     operational_action: str = Field(
         description="Concrete, non-generic operational action step in Turkish"
@@ -51,7 +51,7 @@ class PipelineResponse(BaseModel):
     )
     top_3_findings: list[FindingSummaryDTO] = Field(
         default_factory=list,
-        description="Top 3 ranked operational findings with root-cause analysis and concrete actions",
+        description="Top 3 ranked findings with root-cause analysis and actions",
     )
     message: str = Field(
         default="Pipeline execution completed",

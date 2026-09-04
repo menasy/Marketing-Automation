@@ -100,11 +100,34 @@ Veri seti üzerinde çalıştırılan analiz sonucunda en yüksek operasyonel ci
 
 ## 8. Kurulum & Çalıştırma Adımları
 
-### Ön Gereksinimler
+### Docker ile Sıfır-Dokunuş (Zero-Touch) Çalıştırma (Tavsiye Edilen)
+
+Tüm sistemi (FastAPI Pipeline Servisi + n8n Otomasyon Servisi + Otomatik Workflow Import) tek bir komutla ayağa kaldırabilirsiniz:
+
+```bash
+# Proje dizinine geçiş yapın
+cd marketing-automation
+
+# Docker Compose ortamını başlatın
+docker compose up -d
+
+# Konteyner loglarını canlı izleyin
+docker compose logs -f api
+docker compose logs -f n8n
+```
+
+- **FastAPI API Health Check:** `http://localhost:8000/health`
+- **n8n Web Arayüzü:** `http://localhost:5678`
+
+---
+
+### Yerel (Local Python) Kurulum & Çalıştırma
+
+#### Ön Gereksinimler
 - Python 3.11 veya 3.12
 - Sanal ortam (`venv`)
 
-### Kurulum
+#### Kurulum
 
 ```bash
 # Proje dizinine geçiş yapın
@@ -121,7 +144,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-### CLI Üzerinden Pipeline Çalıştırma
+#### CLI Üzerinden Pipeline Çalıştırma
 
 ```bash
 # Varsayılan veri yollarıyla çalıştırma
@@ -135,7 +158,7 @@ python -m src.cli.main \
   --currency USD
 ```
 
-### FastAPI Sunucusunu Başlatma & REST API Tetikleme
+#### FastAPI Sunucusunu Başlatma & REST API Tetikleme
 
 ```bash
 # Uvicorn ile API sunucusunu başlatın

@@ -392,9 +392,11 @@ class FindingRanker:
         ]
         sorted_items = sorted(
             items,
-            key=lambda i: priority_order.index(i.metric)
-            if i.metric in priority_order
-            else len(priority_order),
+            key=lambda i: (
+                priority_order.index(i.metric)
+                if i.metric in priority_order
+                else len(priority_order)
+            ),
         )
         for item in sorted_items:
             change_pct = item.change_rate * 100.0
@@ -465,9 +467,13 @@ class FindingRanker:
             if platform == Platform.GOOGLE_ADS:
                 action_parts.append("negatif keyword listesini gözden geçirin")
 
-            return ", ".join(action_parts) + "." if action_parts else (
-                "Kampanya performansını izlemeye devam edin, "
-                "24 saat içinde trend devam ederse bütçe müdahalesi uygulayın."
+            return (
+                ", ".join(action_parts) + "."
+                if action_parts
+                else (
+                    "Kampanya performansını izlemeye devam edin, "
+                    "24 saat içinde trend devam ederse bütçe müdahalesi uygulayın."
+                )
             )
 
         # MIXED

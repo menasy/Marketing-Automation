@@ -1,0 +1,44 @@
+name: marketing-automation
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./output:/app/output
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    env_file:
+      - .env
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_USER_MANAGEMENT_DISABLED=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - GENERIC_TIMEZONE=Europe/Istanbul
+      - TZ=Europe/Istanbul
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./automation/workflow.json:/backup/workflow.json:ro
+    entrypoint: /bin/sh
+    command: -c "n8n import:workflow --input=/backup/workflow.json && n8n publish:workflow --id=marketing-briefing-workflow && node -e 'const s=require(\"/usr/local/lib/node_modules/n8n/node_modules/sqlite3\");new s.Database(\"/home/node/.n8n/database.sqlite\").run(\"UPDATE user SET email=?,firstName=?,lastName=?,password=?,settings=?,personalizationAnswers=? WHERE roleSlug=?\",[\"admin@marketing-automation.local\",\"Admin\",\"Ops\",\"$$2a$$10$$Xu05qomG6BpK9cytNTcsO.4cmaU6YrO3pyxZr1nGxUJdfcqp//pdO\",JSON.stringify({userActivated:true}),JSON.stringify({companySize:\"1-10\",companyType:\"other\"}),\"global:owner\"]);' && n8n start"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  n8n_data:

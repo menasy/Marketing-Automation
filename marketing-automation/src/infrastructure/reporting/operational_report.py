@@ -159,9 +159,7 @@ class OperationalReportWriter(IOperationalReportWriter):
             else str(finding.severity).upper()
         )
         platform_val = (
-            finding.platform.value
-            if hasattr(finding.platform, "value")
-            else str(finding.platform)
+            finding.platform.value if hasattr(finding.platform, "value") else str(finding.platform)
         )
         return {
             "campaign_name": finding.campaign_name,
@@ -173,4 +171,3 @@ class OperationalReportWriter(IOperationalReportWriter):
             "severity": severity_val,
             "score": str(round(finding.score, 1)),
         }
-

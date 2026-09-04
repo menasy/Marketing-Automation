@@ -1,4 +1,5 @@
 {
+  "id": "marketing-briefing-workflow",
   "name": "Marketing Automation Daily Executive Briefing & Anomaly Alert Pipeline",
   "nodes": [
     {
@@ -27,7 +28,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8000/api/v1/pipeline/run",
+        "url": "http://api:8000/api/v1/pipeline/run",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -90,7 +91,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nconst summary = data.briefing_summary || 'Günlük pazarlama performansı brifingi başarıyla oluşturuldu.';\nconst anomalyCount = data.anomalies_count !== undefined ? data.anomalies_count : 0;\nconst topFindings = data.top_3_findings || [];\nconst generatedAt = new Date().toISOString();\n\nconst severityEmoji = { 'CRITICAL': '🔴', 'HIGH': '🟠', 'MEDIUM': '🟡', 'LOW': '🟢' };\n\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"📊 Günlük Pazarlama Otomasyonu Yönetici Brifingi\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"context\",\n    \"elements\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Zaman:* ${generatedAt} | *Durum:* Başarılı | *Toplam Anomali:* ${anomalyCount}`\n      }\n    ]\n  },\n  { \"type\": \"divider\" },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Yönetici Özeti:*\\n${summary}`\n    }\n  }\n];\n\nif (topFindings.length > 0) {\n  blocks.push({\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*🎯 Top 3 Kritik Operasyonel Bulgular:*\"\n    }\n  });\n\n  topFindings.forEach((f, idx) => {\n    const emoji = severityEmoji[f.severity] || '⚪';\n    const findingText = `${emoji} *Bulgu #${idx + 1}: ${f.campaign_name}*\\n` +\n      `📌 *Platform:* ${f.platform} | *Ülke:* ${f.country} | *Skor:* ${f.score}\\n` +\n      `📊 *Metrik Değişimi:* ${f.metric_change}\\n` +\n      `🔍 *Teşhis:* ${f.issue_type}\\n` +\n      `⚡ *Aksiyon:* ${f.operational_action}`;\n\n    blocks.push({\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": findingText\n      }\n    });\n\n    if (idx < topFindings.length - 1) {\n      blocks.push({ \"type\": \"divider\" });\n    }\n  });\n}\n\nblocks.push({ \"type\": \"divider\" });\n\nreturn [{ json: { blocks, summary, anomalies_count: anomalyCount, generated_at: generatedAt, top_3_findings: topFindings } }];"
+        "jsCode": "const data = $input.first().json;\nlet summary = data.briefing_summary || 'Günlük pazarlama performansı brifingi başarıyla oluşturuldu.';\n\nsummary = summary\n  .replace(/^-\\s*\\*\\*[^*]+\\*\\*:\\s*/gm, '')\n  .replace(/^-\\s*/gm, '')\n  .trim();\n\nconst anomalyCount = data.anomalies_count !== undefined ? data.anomalies_count : 0;\nconst topFindings = data.top_3_findings || [];\nconst dateStr = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });\n\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"📊 Günlük Pazarlama Performans Brifingi\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"context\",\n    \"elements\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Günaydın Pazarlama Ekibi*  |  📅 *Tarih:* ${dateStr}  |  🚨 *Toplam Anomali:* ${anomalyCount}`\n      }\n    ]\n  },\n  { \"type\": \"divider\" },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*📌 Yönetici Özeti*\\n${summary}`\n    }\n  }\n];\n\nif (topFindings.length > 0) {\n  blocks.push({ \"type\": \"divider\" });\n  blocks.push({\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*🎯 Önemli Operasyonel Bulgular ve Aksiyonlar*\"\n    }\n  });\n\n  topFindings.forEach((f, idx) => {\n    const findingText = `*${idx + 1}. Kampanya:* \\`${f.campaign_name}\\` (${f.platform} • ${f.country})\\n` +\n      `• *Metrik Değişimi:* ${f.metric_change}\\n` +\n      `• *Teşhis:* *${f.issue_type}*\\n` +\n      `• *Aksiyon:* ${f.operational_action}`;\n\n    blocks.push({\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": findingText\n      }\n    });\n  });\n}\n\nblocks.push({ \"type\": \"divider\" });\n\nreturn [{ json: { blocks, summary, anomalies_count: anomalyCount, top_3_findings: topFindings } }];"
       },
       "id": "4",
       "name": "Format Slack Success Message",
@@ -104,7 +105,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $vars.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' }}",
+        "url": "={{ $env.SLACK_WEBHOOK_URL || $vars.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -144,7 +145,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $vars.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' }}",
+        "url": "={{ $env.SLACK_WEBHOOK_URL || $vars.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -233,7 +234,7 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },

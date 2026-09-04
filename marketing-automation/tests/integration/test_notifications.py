@@ -206,7 +206,7 @@ def test_email_send_missing_config() -> None:
 
 
 def test_slack_build_findings_block_kit_renders_structured_findings() -> None:
-    """Verifies that build_findings_block_kit renders severity emojis, campaign data, and actions."""
+    """Verifies that build_findings_block_kit renders emojis, campaign data, and actions."""
     findings: list[dict[str, str]] = [
         {
             "campaign_name": "US_Search_Brand",
@@ -215,8 +215,7 @@ def test_slack_build_findings_block_kit_renders_structured_findings() -> None:
             "metric_change": "CONVERSIONS: 140.00 → 0.00 (-100%) | SPEND: $1,200 → $1,200 (+0%)",
             "issue_type": "VERİ / TRACKING HATASI",
             "operational_action": (
-                "Google Ads CAPI/Pixel entegrasyonunu kontrol edin, "
-                "bütçeyi kapatmayın."
+                "Google Ads CAPI/Pixel entegrasyonunu kontrol edin, bütçeyi kapatmayın."
             ),
             "severity": "CRITICAL",
             "score": "245.5",
@@ -285,4 +284,3 @@ def test_slack_briefing_with_top_3_findings_overrides_generic() -> None:
     assert "bütçeyi" in all_text.lower()
     # Generic findings should NOT appear when top_3_findings are provided
     assert "Google Ads CPC spiked" not in all_text
-
