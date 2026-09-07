@@ -175,6 +175,12 @@ class BatchReasoningOrchestrator:
                 system_instruction=system_instruction,
                 user_prompt=user_payload,
             )
+            logger.info(
+                "Gemini API call successful [exec_id=%s]. "
+                "Received %d findings. Proceeding to verification.",
+                context.execution_id,
+                len(result.findings),
+            )
             context.working_memory.record_step(
                 "INITIAL_GENERATION",
                 "Received initial BatchAnalysisResult from LLM",
@@ -201,17 +207,22 @@ class BatchReasoningOrchestrator:
                 errors=list(verification.errors),
             )
             logger.warning(
-                "Verification failed on initial attempt [exec_id=%s]. Triggering reflection. "
-                "Errors: %s",
+                "Verification failed on initial attempt [exec_id=%s]. "
+                "Errors (%d): %s | Warnings (%d): %s. Triggering reflection retry.",
                 context.execution_id,
+                len(verification.errors),
                 ", ".join(verification.errors),
+                len(verification.warnings),
+                ", ".join(verification.warnings) if verification.warnings else "none",
             )
             formatted_errors = "\n".join(f"- {err}" for err in verification.errors)
             reflection_user_prompt = (
                 "Your previous output failed deterministic verification with errors:\n"
                 f"{formatted_errors}\n"
                 "Please regenerate the analysis ensuring all cited metrics, numbers, and campaign "
-                "names strictly match the EvidenceDossier."
+                "names strictly match the EvidenceDossier provided below.\n\n"
+                "--- ORIGINAL EVIDENCE DOSSIER ---\n"
+                f"{user_payload}"
             )
 
             retry_result = await self._client.generate_structured_analysis(
@@ -236,7 +247,11 @@ class BatchReasoningOrchestrator:
 
             # 4. Fallback Activation on Verification Failure
             logger.error(
-                "Verification failed on retry or API failure. Activating deterministic fallback."
+                "Verification failed after reflection retry [exec_id=%s]. "
+                "Remaining errors (%d): %s. Activating deterministic fallback.",
+                context.execution_id,
+                len(retry_verification.errors),
+                ", ".join(retry_verification.errors),
             )
             context.working_memory.record_step(
                 "FALLBACK_ACTIVATION",
@@ -251,7 +266,10 @@ class BatchReasoningOrchestrator:
 
         except Exception as exc:
             logger.error(
-                "Verification failed on retry or API failure. Activating fallback. Error: %s",
+                "Gemini API or parsing error [exec_id=%s]. Activating fallback. Error type: %s, "
+                "Details: %s",
+                context.execution_id,
+                type(exc).__name__,
                 exc,
             )
             context.working_memory.record_step(

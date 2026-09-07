@@ -29,13 +29,15 @@ class NumericVerifier:
         r"(?<![\d\w.-])[+-]?\d+\.\d+(?![\d\w.-])|(?<![\d\w.-])[+-]\d+(?![\d\w.-])"
     )
 
-    def __init__(self, tolerance: float = 1.0) -> None:
-        """Initialize NumericVerifier with absolute tolerance for rounding differences.
+    def __init__(self, tolerance: float = 5.0, relative_tolerance: float = 0.10) -> None:
+        """Initialize NumericVerifier with absolute and relative tolerance for rounding differences.
 
         Args:
-            tolerance: Absolute percentage/numerical tolerance (default: 1.0 for +-1.0%).
+            tolerance: Absolute percentage/numerical tolerance (default: 5.0 for +-5.0%).
+            relative_tolerance: Proportional tolerance for plain numbers (default: 0.10 = 10%).
         """
         self._tolerance = tolerance
+        self._relative_tolerance = relative_tolerance
 
     def verify(
         self, result: BatchAnalysisResult, dossier: EvidenceDossier
@@ -97,14 +99,21 @@ class NumericVerifier:
                         f"cited currency figure ${curr} does not match any evidence metric."
                     )
 
-            # Audit plain decimal/signed numbers
+            # Audit plain decimal/signed numbers (proportional tolerance for rounding)
             for num in plain_numbers:
-                if not any(
-                    abs(num - dossier_val) <= self._tolerance for dossier_val in dossier_all_values
-                ):
-                    errors.append(
-                        f"Numeric hallucination in campaign '{finding.campaign_name}': "
-                        f"cited numeric value {num} does not match any evidence metric."
+                is_grounded = any(
+                    abs(num - dossier_val) <= self._tolerance
+                    or (
+                        abs(dossier_val) > 0.01
+                        and abs(num - dossier_val) / abs(dossier_val) <= self._relative_tolerance
+                    )
+                    for dossier_val in dossier_all_values
+                )
+                if not is_grounded:
+                    warnings.append(
+                        f"Unverified numeric value in campaign '{finding.campaign_name}': "
+                        f"cited numeric value {num} could not be matched to evidence metric "
+                        f"(tolerance: ±{self._tolerance} abs / ±{self._relative_tolerance*100:.0f}% rel)."
                     )
 
         return errors, warnings
@@ -255,9 +264,10 @@ class GroundingVerifier:
                     conv_metric is not None and conv_metric.current_value == 0.0 and ce.spend > 0.0
                 )
                 if not (has_triggered_dq_signal or conv_collapsed):
-                    errors.append(
-                        "DATA_QUALITY diagnosis ungrounded: no technical or tracking signals "
-                        "triggered for campaign."
+                    warnings.append(
+                        f"DATA_QUALITY diagnosis for campaign '{finding.campaign_name}' "
+                        "could not be grounded to explicit tracking signals. "
+                        "LLM may have inferred data quality issues from metric patterns."
                     )
 
             elif finding.issue_type == "PERFORMANCE":

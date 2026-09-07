@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     llm_provider: str = Field(default="gemini", validation_alias="LLM_PROVIDER")
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(
-        default="gemini-1.5-flash", validation_alias=AliasChoices("GEMINI_MODEL", "LLM_MODEL")
+        default="gemini-3.5-flash", validation_alias=AliasChoices("GEMINI_MODEL", "LLM_MODEL")
     )
     openai_api_key: str = Field(default="")
     openai_model: str = Field(default="gpt-4o-mini")

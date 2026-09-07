@@ -24,7 +24,7 @@ class GeminiService(ILLMService):
     ) -> None:
         settings = get_settings()
         self._api_key = api_key if api_key is not None else settings.gemini_api_key
-        self._model_name = model_name or settings.gemini_model or "gemini-1.5-flash"
+        self._model_name = model_name or settings.gemini_model or "gemini-3.5-flash"
         self._prompt_loader = prompt_loader or PromptLoader()
         self._validator = validator or OutputValidator()
 
