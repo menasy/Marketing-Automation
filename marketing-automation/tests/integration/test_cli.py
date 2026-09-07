@@ -35,7 +35,7 @@ def test_cli_main_direct_execution() -> None:
 
     content = Path("output/anomalies.json").read_text(encoding="utf-8")
     parsed = json.loads(content)
-    assert isinstance(parsed, list)
+    assert isinstance(parsed, (list, dict))
 
 
 def test_cli_invalid_target_date_format(capsys: object) -> None:

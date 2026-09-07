@@ -1,4 +1,6 @@
 .venv
+venv
+env
 __pycache__
 *.py[cod]
 *$py.class
@@ -6,6 +8,7 @@ __pycache__
 .ruff_cache
 .mypy_cache
 .git
+.gitignore
 .env
 .env.*
 .vscode
@@ -19,3 +22,5 @@ dist
 build
 htmlcov
 .coverage
+output/*
+!output/.gitkeep

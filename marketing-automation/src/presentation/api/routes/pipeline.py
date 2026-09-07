@@ -17,16 +17,16 @@ router = APIRouter(prefix="/api/v1/pipeline", tags=["Pipeline"])
     summary="Execute End-to-End Anomaly Detection Pipeline",
     description=(
         "Ingests Google/Meta advertising CSVs, normalizes currency/grain, "
-        "computes historical rolling baseline, detects anomalies, ranks operational findings, "
-        "and generates executive briefing markdown."
+        "computes historical rolling baseline, detects anomalies, compiles dossier, "
+        "runs agent reasoning, writes deliverables, and dispatches Slack notifications."
     ),
 )
-def run_pipeline(
+async def run_pipeline(
     request: PipelineRequest,
     use_case: RunPipelineUseCase = Depends(get_run_pipeline_use_case),  # noqa: B008
 ) -> PipelineResponse:
-    """Executes full anomaly detection pipeline and returns execution summary response."""
-    result = use_case.execute(request)
+    """Executes full anomaly detection pipeline asynchronously and returns summary response."""
+    result = await use_case.execute(request)
     response = PipelineResponse.from_domain(result)
 
     if result.status == "failed":

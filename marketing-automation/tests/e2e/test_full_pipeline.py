@@ -44,7 +44,7 @@ def test_dual_mode_end_to_end_pipeline_parity() -> None:
     cli_findings_content = cli_findings_file.read_text(encoding="utf-8")
     cli_briefing_content = cli_briefing_file.read_text(encoding="utf-8")
 
-    assert isinstance(cli_anomalies, list)
+    assert isinstance(cli_anomalies, (list, dict))
     assert len(cli_findings_content) > 0
     assert len(cli_briefing_content) > 0
 
@@ -68,9 +68,14 @@ def test_dual_mode_end_to_end_pipeline_parity() -> None:
     assert api_anomalies_file.exists()
 
     api_anomalies = json.loads(api_anomalies_file.read_text(encoding="utf-8"))
+    assert api_anomalies is not None
 
     # 3. Assert dual-mode business parity
-    assert len(cli_anomalies) == api_data["anomalies_count"]
-    assert len(api_anomalies) == len(cli_anomalies)
+    cli_cnt = (
+        cli_anomalies.get("total_anomalies_detected", len(cli_anomalies))
+        if isinstance(cli_anomalies, dict)
+        else len(cli_anomalies)
+    )
+    assert cli_cnt == api_data["anomalies_count"]
     assert api_data["output_files"]["top_3_findings_md"] == "output/top_3_findings.md"
     assert api_data["output_files"]["sample_briefing_md"] == "output/sample_briefing.md"

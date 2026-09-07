@@ -143,14 +143,17 @@ class GeminiService(ILLMService):
         for line in lines:
             stripped = line.strip()
             header_clean = stripped.lstrip("#* ").strip().lower()
-            if header_clean in (
-                "executive summary",
-                "yönetici özeti",
-                "özet",
-                "executive briefing",
-                "yönetici brifingi",
-            ) or header_clean.startswith("executive summary") or (
-                header_clean.startswith("yönetici özeti")
+            if (
+                header_clean
+                in (
+                    "executive summary",
+                    "yönetici özeti",
+                    "özet",
+                    "executive briefing",
+                    "yönetici brifingi",
+                )
+                or header_clean.startswith("executive summary")
+                or (header_clean.startswith("yönetici özeti"))
             ):
                 in_summary = True
                 continue
@@ -164,7 +167,8 @@ class GeminiService(ILLMService):
         else:
             # Fallback to first non-header paragraph if header parser didn't match
             non_header_paragraphs = [
-                p.strip() for p in markdown_text.split("\n\n")
+                p.strip()
+                for p in markdown_text.split("\n\n")
                 if p.strip() and not p.strip().startswith("#")
             ]
             if non_header_paragraphs:

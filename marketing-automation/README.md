@@ -1,201 +1,271 @@
-# E-Trink Global — Pazarlama Otomasyonu ve İstatistiksel Anomali Tespit Pipeline'ı
+# Marketing Automation: Gemini Agentic Anomaly Detection System
 
-[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![Code Style](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Type Check](https://img.shields.io/badge/types-mypy%20strict-brightgreen.svg)](https://mypy-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![Architecture](https://img.shields.io/badge/architecture-Clean%20Architecture%20%7C%20SOLID-emerald.svg)
+![LLM Integration](https://img.shields.io/badge/LLM-Google%20Gemini%202.5%20Flash-orange.svg)
+![Type Safety](https://img.shields.io/badge/mypy-strict%20100%25-brightgreen.svg)
+![Code Quality](https://img.shields.io/badge/code%20style-ruff-black.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-E-Trink Global’in uluslararası çok kanallı reklam operasyonları (Google Ads, Meta Ads) için geliştirilmiş; günlük veri toplama, döviz ve kırılım (grain) normalizasyonu, bakış yönü sapmasız (look-ahead bias protection) 14–30 günlük kayan istatistiksel baz çizgisi hesaplama, Z-score tabanlı anomali tespiti, operasyonel kök neden analizi ve LLM destekli kanıta dayalı yönetici brifingi üreten üretim seviyesinde (production-grade) Python mimarisi.
+**Marketing Automation**, dijital pazarlama kanallarındaki (Google Ads, Meta Ads, TikTok Ads vb.) huni (funnel) metrik sapmalarını, performans düşüşlerini ve veri kalitesi anomalilerini tespit etmek üzere geliştirilmiş **Agentic AI & Clean Architecture** tabanlı bir otonom analiz platformudur.
 
----
-
-## 1. Proje Özeti & Vizyon
-
-Uluslararası ölçekte çoklu reklam hesabı ve para birimi yöneten dijital pazarlama operasyon ekipleri, her iş gününün ilk 60–90 dakikasını panellere manuel giriş yapıp CSV raporları indirmek, metrik değişimlerini kıyaslamak ve olası reklam arızalarını (CPA fırlamaları, CTR düşüşleri, piksel/dönüşüm takip kayıpları) tespit etmekle harcamaktadır.
-
-Bu proje, E-Trink Global pazarlama operasyonundaki manuel müdahale ihtiyacını tamamen ortadan kaldıran uçtan uca **Otomatik Sabah Brifingi ve Anomali Tespit Mimarisi** sunar:
-
-1. **Veri Toplama & Normalizasyon:** Farklı kanallardan (Google Ads, Meta Ads) gelen ham günlük verileri standart şemaya getirir, döviz kurlarını (EUR, TRY, GBP vb.) USD bazlı hedef para birimine çevirir ve `1 satır = 1 platform × 1 hesap × 1 kampanya × 1 ülke × 1 gün` (canonical grain) seviyesinde birleştirir.
-2. **Kayan İstatistiksel Baz Çizgisi:** Değerlendirilen $D$ hedef gününden önceki $[D-N, D-1]$ ($N \in [14, 30]$) tarih aralığını kapsayan kayan tarih penceresinde ortalama, standart sapma ve medyan değerlerini hesaplar. Hedef $D$ günü istatistiksel hesaba dahil edilmeyerek **bakış yönü sapması (look-ahead bias)** tamamen engellenir.
-3. **Z-Score & Hacim Muhafızları (Volume Guards):** Metrik yönü kurallarına (CPA/CPC artışı olumsuz, ROAS/CTR düşüşü olumsuz, Spend artışı nötr) ve min. 7 günlük veri şartına göre istatistiksel Z-score sapmalarını hesaplar. Mikro bütçe ve sıfır dönüşüm gürültülerini hacim muhafızlarıyla filtreler.
-4. **Operasyonel Bulgular ve Kök Neden Analizi:** Kampanya bazlı anomalileri kümeleyerek sorunun **Veri Kalitesi (Data Quality)** mı yoksa **Performans (Performance)** kaynaklı mı olduğunu deterministik kurallarla teşhis eder; Bütçe, Teklif, Kreatif ve Takip aksiyonları reçete eder.
-5. **LLM Yönetici Brifingi & Grounding Güvenliği:** OpenAI GPT-4o-mini entegrasyonu ile sadece doğrulanmış `anomalies.json` girdisinden hareketle yönetici brifingi üretir. `output_validator.py` ile brifingdeki tüm kampanya, metrik ve oranların doğruluğunu deterministik olarak denetler.
-6. **n8n & Zamanlanmış Bildirim Dağıtımı:** Mimarinin tamamı FastAPI ve headless CLI arabirimleri üzerinden dışarı açılır. n8n workflow'u ile her sabah 08:00'de (Europe/Istanbul) otomatik tetiklenerek Slack Block Kit ve Email üzerinden yöneticilere ulaştırılır.
+Sistem, geleneksel kurallı uyarı sistemlerinin ürettiği yanlış alarmları (false positives) ve yüksek LLM maliyetlerini/zaman aşımı (timeout) sorunlarını ortadan kaldırmak için **Tek Turlu Toplu Muhakeme (Single-Turn Batch Reasoning)** mimarisini kullanır.
 
 ---
 
-## 2. Mimari Yapı (Clean Architecture & SOLID)
+## 🏗️ 1. Temel Mimari İlkeler (Clean Architecture & SOLID)
 
-Proje, **Clean Architecture (Temiz Mimari)** ve **SOLID** ilkelerine tam uyum sağlayacak şekilde tasarlanmıştır. Bağımlılık yönü strictly dıştan içe doğrudur:
+Proje, yazılımın sürdürülebilirliğini, test edilebilirliğini ve LLM/veritabanı bağımlılıklarından izole edilmesini sağlamak amacıyla **Clean Architecture (Temiz Mimari)** ve **SOLID** ilkelerine %100 uyumlu olarak tasarlanmıştır.
 
 ```
-[Presentation: FastAPI / CLI]
-       │
-       ▼
-[Application: Use Cases & Ports]
-       │
-       ▼
-[Domain: Entities, Enums & Pure Services] ◄── [Infrastructure: Readers, LLM, Parsers]
+                  ┌─────────────────────────────────────────┐
+                  │           Presentation Layer            │
+                  │     (FastAPI REST API / CLI Main)       │
+                  └────────────────────┬────────────────────┘
+                                       │
+                                       ▼
+                  ┌─────────────────────────────────────────┐
+                  │            Application Layer            │
+                  │   (RunPipelineUseCase, ArtifactService) │
+                  └──────────┬────────────────────┬─────────┘
+                             │                    │
+                             ▼                    ▼
+     ┌───────────────────────────────┐   ┌───────────────────────────────┐
+     │          Agent Layer          │   │      Infrastructure Layer     │
+     │  (BatchReasoningOrchestrator, │   │    (GeminiLLM, CSVReader,     │
+     │    Verifier, FallbackGen)     │   │     SlackNotificationPort)    │
+     └───────────────┬───────────────┘   └───────────────┬───────────────┘
+                     │                                   │
+                     └─────────────────┬─────────────────┘
+                                       │
+                                       ▼
+                  ┌─────────────────────────────────────────┐
+                  │              Domain Layer               │
+                  │ (Entities, Enums, ValueObjects, Dossier)│
+                  └─────────────────────────────────────────┘
 ```
 
-### Katman Sorumlulukları ve İzolasyon Kuralları
+### Katman Sorumlulukları ve Bağımlılık Yönü
 
-- **Domain Katmanı (`src/domain/`):** Core iş mantığı, dondurulmuş veri sınıfları (`@dataclass(frozen=True)`), domain enum'ları (`StrEnum`) ve saf servisleri (`MetricCalculator`, `FindingRanker`, `AnomalyPolicy`) barındırır. **Sıfır dış bağımlılık** kuralı geçerlidir; Pandas, NumPy, FastAPI, HTTPX, Pydantic veya I/O kütüphaneleri bu katmana kesinlikle sızamaz.
-- **Application Katmanı (`src/application/`):** Uygulama senaryolarını (`RunPipelineUseCase`, `NormalizeDataUseCase` vb.) ve altyapı arayüzlerini (Protocols/ABCs: `IDataReader`, `IBaselineProvider`, `ILanguageModelService`) içerir. Yalnızca Domain katmanına bağımlıdır.
-- **Infrastructure Katmanı (`src/infrastructure/`):** Application katmanındaki portları gerçekleyen CSV okuyucular, Pandas veri işleyiciler, Z-score istatistiksel motoru, OpenAI LLM entegrasyonu, Pydantic Settings ve Slack/Email adaptörlerini barındırır. *Pandas DataFrames sadece CSV okuma/birleştirme aşamasında kullanılır, domain nesnelerine dönüştürülerek isolasyon sağlanır.*
-- **Presentation Katmanı (`src/presentation/` & `src/cli/`):** FastAPI REST API uç noktalarını (`POST /api/v1/pipeline/run`) ve komut satırı uygulamasını (CLI) barındırır. İş mantığı içermez, sadece istekleri DTO'lara dönüştürerek `RunPipelineUseCase` çalıştırır.
+1. **Domain Katmanı (`src/domain/`)**: Projenin çekirdeğidir. Dış dünyadan (FastAPI, Gemini, Pandas) tamamen izoledir. Saf Python `@dataclass` yapıları (`Anomaly`, `EvidenceDossier`, `DataQualitySignal`, `MetricBaseline`) içerir. İş kuralları ve veri modelleri burada tanımlanır.
+2. **Application Katmanı (`src/application/`)**: Kullanım senaryolarını (`RunPipelineUseCase`) ve servis arayüzlerini (ports) yönetir. İş akışını orkestre eder.
+3. **Agent Katmanı (`src/agent/`)**: Gemini tabanlı toplu muhakeme orkestratörünü (`BatchReasoningOrchestrator`), doğrulama kapılarını (`NumericVerifier`, `GroundingVerifier`) ve deterministik düşüş mekanizmasını (`DeterministicFallbackGenerator`) barındırır.
+4. **Infrastructure Katmanı (`src/infrastructure/`)**: Veri okuyucuları (`CSVDataReader`), LLM adaptörleri (`GeminiLLMClient`), bildirim servisleri (`SlackNotificationAdapter`) ve dosya yazıcılarını barındırır.
+5. **Presentation Katmanı (`src/presentation/` & `src/cli/`)**: Dış dünya ile etkileşim noktalarıdır (FastAPI endpoint'leri ve CLI argüman ayrıştırıcısı).
 
----
-
-## 3. Canlı API Entegrasyon Notu (Zorunlu – Max 10 Satır)
-
-> Meta Marketing API (`/insights`) ve Google Ads API (`GoogleAdsService.SearchStream`) canlı entegrasyonunda; Meta tarafında System User Token (Long-Lived), Google tarafında ise OAuth2 Refresh Token + Developer Token ile gRPC/REST kimlik doğrulaması sağlanır. Günlük veri çekimlerinde son 7 günün attribution pencereli verisi çekilerek incremental upsert stratejisi uygulanır. Meta `X-Business-Use-Case-Usage` ve Google `RESOURCE_EXHAUSTED` HTTP 429 / gRPC limitlerinde exponential backoff & jitter mekanizması devreye girer. Başarısız istekler Dead Letter Queue (DLQ) ve Sentry üzerinde izlenerek veri kaybı engellenir. `IDataSource` portu sayesinde domain mantığı değişmeden API okuyucuları sisteme takılabilir.
-
----
-
-## 4. Anomali Eşik Değerlerinin Gerekçesi (Zorunlu – 1 Paragraf)
-
-> Reklam açık artırma (auction) ekosistemlerinde günlük harcama, tıklama ve dönüşüm metrikleri doğal bir piyasa dalgalanmasına (volatilitesine) sahiptir. Bu nedenle sabit yüzde sapmaları (ör. %40 harcama artışı, %30 CPA yükselişi, %50 dönüşüm düşüşü) tek başına değerlendirildiğinde ciddi bir **false-positive (yanlış alarm)** yorgunluğuna yol açar. Sistemimizde 14–30 günlük kayan istatistiksel pencerede hesaplanan 2-sigma ($Z \ge 2.0$, %95 güven aralığı) ve 3-sigma ($Z \ge 3.0$, %99.7 güven aralığı) screening eşikleri, metrik sapmasının rastgele piyasa gürültüsü mü yoksa istatistiksel olarak anlamlı bir arıza mı olduğunu ayırt eder. Min. 100 gösterim, min. $10 harcama ve min. 5 geçmiş dönüşüm gibi **Hacim Muhafızları (Volume Guards)** ile birleştirilen bu istatistiksel yaklaşım, mikro bütçeli kampanyalardaki matematiksel bölme sapmalarını eler ve operasyon ekiplerinin yalnızca gerçek aksiyon gerektiren krizlere odaklanmasını sağlar.
+### Strict Data Boundary Rule (İzolasyon Kuralı)
+- **Pandas DataFrame İzolasyonu**: Pandas, `CSVDataReader` içerisinde yalnızca dosya okuma ve ilk istatistiksel hesaplama için kullanılır. Domain katmanına hiçbir zaman DataFrame nesnesi sızmaz; tüm veriler immutable, strongly-typed `@dataclass` nesnelerine dönüştürülür.
+- **Sıfır `Any` Şartı**: Tüm kod tabanı `mypy --strict` standartlarına uyar. Belirsiz tiplere ve `Any` kullanımına izin verilmez.
 
 ---
 
-## 5. LLM Katmanı, Kısıtlar ve Grounding Denetimi
+## ⚖️ 2. Python vs. LLM Sorumluluk Dağılımı
 
-- **Harici Prompt Mimarisi:** Sistem yönergeleri kod içerisine gömülmeyip tamamen harici `/prompts/executive_briefing.md` dosyasında yönetilir.
-- **Sıfır Halüsinasyon Kısıtı (`temperature=0.0`):** LLM bir anomali tespit motoru veya hesaplayıcı değildir; sadece tespit edilmiş `anomalies.json` verisini açıklayan bir özetleyicidir. Dış kaynaklı sektör ortalamaları, sezonluk tahminler veya veride bulunmayan varsayımlar kesin olarak yasaklanmıştır.
-- **Deterministik Doğrulama (`output_validator.py`):** Üretilen Markdown brifing metni teslim edilmeden önce regex ve dize karşılaştırma denetiminden geçer. Metinde geçen tüm kampanya isimleri, metrik türleri ve yüzdesel/sayısal değerler kaynak JSON ile çapraz sorgulanır. Uyuşmazlık durumunda metne otomatik uyarı eklenir veya istisna fırlatılır.
+Sistemde matematiksel determinizm ile sözel muhakeme yetenekleri kesin çizgilerle ayrılmıştır:
 
----
-
-## 6. Otomasyon Mimarisi (n8n & 08:00 Zamanlama)
-
-- **Zamanlama:** Her gün sabah `08:00` (Europe/Istanbul - UTC+3). Ad platformlarının bir önceki güne ait veri hesaplamalarını tamamlaması sonrası en taze veriyle çalışır.
-- **Orkestrasyon (n8n Workflow):** `automation/workflow.json` dosyası üzerinden n8n'e aktarılır.
-  1. Cron Trigger düğümü 08:00'de tetiklenir.
-  2. HTTP Request düğümü `POST http://localhost:8000/api/v1/pipeline/run` çağrısı yapar (60s timeout, 3 retry backoff).
-  3. IF Condition düğümü `status === 'success'` kontrolü yapar.
-  4. Başarılı akış: Özet ve en kritik 3 anomaliyi Slack Block Kit formatına getirip `#marketing-briefings` kanalına iletir.
-  5. Hata akışı: Hata detayları ve `execution_id` ile `#marketing-alerts-critical` kanalına acil durum uyarısı düşer.
+| Sorumluluk Alanı | Modül / Katman | Açıklama & Sınırlar |
+| :--- | :--- | :--- |
+| **İstatistiksel Sapma & Z-Skoru** | **Python (Domain/Infra)** | Rolling 7-günlük ortalama, standart sapma, z-skoru ($\ge 2.0$) ve yüzde değişimler hesaplanır. Sıfır metinsel teşhis üretilir. |
+| **Veri Kalite Sinyali (`DataQualitySignal`)** | **Python (Domain)** | 8 tam huni metriği (Impressions, Clicks, Spend, Conversions, Revenue, CTR, CPC, ROAS) arasındaki uyumsuzluklar (ör. harcama var ama gösterim 0, dönüşüm var ama gelir 0) matematiksel kurallarla sinyalleşir. |
+| **Kök Neden Teşhisi** | **Agent (Gemini 2.5 Flash)** | `EvidenceDossier` verisini okuyarak sapmanın **`DATA_QUALITY`** (izleme hatası) mu yoksa **`PERFORMANCE`** (gerçek kampanya çöküşü) mü olduğunu metrik korelasyonu ile saptar. |
+| **Reçeteli Aksiyon Planı** | **Agent (Gemini 2.5 Flash)** | Teşhise uygun 4 kanallı (Bütçe, Teklif/Bid, Kreatif, Tracking) somut aksiyon adımları önerir. |
+| **C-Level Sabah Brifingi** | **Agent (Gemini 2.5 Flash)** | Pazarlama direktörleri ve C-Level yöneticiler için 3 maddelik stratejik özet ve risk derecelendirmesi üretir. |
 
 ---
 
-## 7. Reklam Operasyonu Değerlendirmesi Özeti (Top 3 Bulgu)
+## 🛡️ 3. Doğrulama Kapısı (Verifier Gate) & Fail-Safe Fallback
 
-Veri seti üzerinde çalıştırılan analiz sonucunda en yüksek operasyonel ciddiyet skoruna sahip 3 kritik bulgu ve reçete edilen aksiyonlar belirlenmiştir:
+LLM halüsinasyonlarını engellemek ve sistem sürekliliğini %100 garanti altına almak için çift kademeli doğrulama ve düşüş mekanizması mevcuttur.
 
-1. **`AH | Retargeting | UK` (Meta Ads - UK):**
-   - *Sınıflandırma:* **PERFORMANCE** (Gerçek Performans Düşüşü).
-   - *Kanıt:* CPA %252.3 yükselmiş ($8.87 \rightarrow $31.24, Z=+17.43), ROAS %73.7 düşmüş ($11.36 \rightarrow $2.99, Z=-4.70), Dönüşüm %57.6 azalmıştır.
-   - *Aksiyonlar:* Bütçe: `DECREASE`, Teklif: `ADJUST_TARGET_CPA_ROAS`, Kreatif: `AUDIT_LANDING_PAGE`, Takip: `NO_ACTION`.
-2. **`AH | Advantage+ Shopping` (Meta Ads - UK):**
-   - *Sınıflandırma:* **PERFORMANCE** (Gerçek Performans Düşüşü).
-   - *Kanıt:* CPA %259.5 yükselmiş ($30.33 \rightarrow $109.03, Z=+14.86), ROAS %71.0 düşmüş, Dönüşüm %76.5 azalmıştır.
-   - *Aksiyonlar:* Bütçe: `DECREASE`, Teklif: `ADJUST_TARGET_CPA_ROAS`, Kreatif: `AUDIT_LANDING_PAGE`, Takip: `NO_ACTION`.
-3. **`VC | Prospecting | US` (Meta Ads - US):**
-   - *Sınıflandırma:* **PERFORMANCE** (Gerçek Performans Düşüşü).
-   - *Kanıt:* CPA %253.2 yükselmiş ($53.09 \rightarrow $187.52, Z=+14.54), ROAS %75.0 düşmüş, CTR %15.0 azalmıştır.
-   - *Aksiyonlar:* Bütçe: `DECREASE`, Teklif: `ADJUST_TARGET_CPA_ROAS`, Kreatif: `REFRESH_FATIGUED_CREATIVES`, Takip: `NO_ACTION`.
+```text
+[EvidenceDossier] ──> [Gemini LLM (Batch Reasoning)] ──> [Structured Analysis Result]
+                                                                  │
+                                                                  ▼
+                                                       [Verifier Gate Check]
+                                                      ┌───────────┴───────────┐
+                                                      │                       │
+                                                 (Doğrulandı)             (Hata Var)
+                                                      │                       │
+                                                      ▼                       ▼
+                                              [Artifact & Slack]     [1-Step Reflection Loop]
+                                                                              │
+                                                                      ┌───────┴───────┐
+                                                                      │               │
+                                                                   (Başarılı)     (Yine Hatalı)
+                                                                      │               │
+                                                                      ▼               ▼
+                                                              [Artifact & Slack]  [Deterministic Fallback]
+```
+
+1. **NumericVerifier ($\pm 1.0\%$ Tolerans)**: LLM tarafından üretilen çıktılardaki tüm sayısal değerleri, `EvidenceDossier` içerisindeki ham verilerle karşılaştırır. Sapma $\pm 1.0\%$ sınırını aşarsa doğrulama başarısız olur.
+2. **GroundingVerifier**: LLM çıktısında bahsi geçen kampanya isimleri, metrik adları ve z-skorlarının kaynak dosyada bulunup bulunmadığını kontrol ederek halüsinasyon oluşumunu engeller.
+3. **1-Turlu Yansıma (Reflection Retry)**: Doğrulama başarısız olursa, hatanın spesifik nedeni LLM'e geri bildirilerek 1 defalık düzeltme hakkı verilir.
+4. **DeterministicFallbackGenerator**: LLM API çökmesi, rate-limit aşımı veya ikinci doğrulama hatası durumunda devreye girer. Boru hattını kesintiye uğratmadan, Python tarafından deterministik olarak üretilen kural tabanlı veri görünümünü yayınlar.
 
 ---
 
-## 8. Kurulum & Çalıştırma Adımları
+## ⚙️ 4. Kurulum & Yapılandırma
 
-### Docker ile Sıfır-Dokunuş (Zero-Touch) Çalıştırma (Tavsiye Edilen)
+### Gereksinimler
+- Python 3.11+
+- Docker & Docker Compose (Konteynerli çalıştırma için)
+- Git
 
-Tüm sistemi (FastAPI Pipeline Servisi + n8n Otomasyon Servisi + Otomatik Workflow Import) tek bir komutla ayağa kaldırabilirsiniz:
+### Yerel Geliştirme Ortamı Kurulumu
 
 ```bash
-# Proje dizinine geçiş yapın
-cd marketing-automation
+# 1. Depoyu klonlayın
+git clone https://github.com/menasy/Marketing-Automation.git
+cd Marketing-Automation/marketing-automation
 
-# Docker Compose ortamını başlatın
-docker compose up -d
-
-# Konteyner loglarını canlı izleyin
-docker compose logs -f api
-docker compose logs -f n8n
-```
-
-- **FastAPI API Health Check:** `http://localhost:8000/health`
-- **n8n Web Arayüzü:** `http://localhost:5678`
-
----
-
-### Yerel (Local Python) Kurulum & Çalıştırma
-
-#### Ön Gereksinimler
-- Python 3.11 veya 3.12
-- Sanal ortam (`venv`)
-
-#### Kurulum
-
-```bash
-# Proje dizinine geçiş yapın
-cd marketing-automation
-
-# Sanal ortam oluşturun ve aktif edin
+# 2. Sanal ortam oluşturun ve aktif edin
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/venv/bin/activate  # Linux/macOS
 
-# Bağımlılıkları geliştirme modunda yükleyin
-pip install -e ".[dev]"
+# 3. Bağımlılıkları yükleyin
+pip install --upgrade pip
+pip install -r requirements.txt
 
-# Ortam değişkenlerini hazırlayın
+# 4. Ortam değişkenlerini hazırlayın
 cp .env.example .env
 ```
 
-#### CLI Üzerinden Pipeline Çalıştırma
+### Ortam Değişkenleri (`.env`)
 
-```bash
-# Varsayılan veri yollarıyla çalıştırma
-python -m src.cli.main
+```env
+# Gemini API Yapılandırması
+GEMINI_API_KEY="your-gemini-api-key-here"
+GEMINI_MODEL_NAME="gemini-2.5-flash"
 
-# Özel veri yolları ve değerlendirme tarihi ile çalıştırma
-python -m src.cli.main \
-  --google-csv data/google_ads_daily.csv \
-  --meta-csv data/meta_ads_daily.csv \
-  --window-days 14 \
-  --currency USD
+# Slack Bildirim Entegrasyonu
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+# Sistem Ayarları
+LOG_LEVEL="INFO"
+ENVIRONMENT="production"
+OUTPUT_DIR="./output"
+DATA_DIR="./data"
 ```
 
-#### FastAPI Sunucusunu Başlatma & REST API Tetikleme
+---
+
+## 🚀 5. Kullanım Kılavuzu (Çalıştırma Modları)
+
+### Mod A: Headless CLI Kullanımı
+Komut satırından belirli bir tarih için boru hattını tetiklemek için:
 
 ```bash
-# Uvicorn ile API sunucusunu başlatın
-uvicorn src.presentation.api.app:app --host 0.0.0.0 --port 8000 --reload
+# Belirli bir tarih için analiz çalıştırma
+python -m src.cli.main --date 2026-09-07
+
+# Özel veri ve çıktı dizinleri ile çalıştırma
+python -m src.cli.main --date 2026-09-07 --data-dir ./custom_data --output-dir ./custom_output
 ```
 
-Başka bir terminalden API'yi tetikleyin:
+### Mod B: FastAPI REST API Kullanımı
+Web servisini başlatmak için:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/pipeline/run" \
-  -H "Content-Type: application/json" \
+# Development sunucusunu başlatın
+uvicorn src.presentation.api.main:app --reload --host 0.0.0.0 --port 8000
+```
+- **Interactive Swagger Docs**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
+#### Endpoint Örneği: `POST /api/v1/pipeline/run`
+```bash
+curl -X 'POST' \
+  'http://localhost:8000/api/v1/pipeline/run' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
   -d '{
-    "window_days": 14,
-    "reporting_currency": "USD"
-  }'
+  "target_date": "2026-09-07",
+  "force_refresh": false
+}'
+```
+
+### Mod C: Zero-Touch Docker Compose & n8n Entegrasyonu
+Tüm sistemi (FastAPI Servisi + n8n Otomasyon Motoru) tek komutla ayağa kaldırın:
+
+```bash
+# Konteynerleri arka planda başlatın
+docker compose up -d
+```
+
+- **n8n Web UI**: `http://localhost:5678` (Varsayılan Giriş: `admin` / `admin123456`)
+- **Otomatik İş Akışı**: `automation/workflow.json` dosyası konteyner ilk açıldığında otomatik olarak n8n ortamına aktarılır.
+- **Zamanlayıcı (Cron Trigger)**: Her sabah **08:00 Europe/Istanbul** saatinde tetiklenerek `http://api:8000/api/v1/pipeline/run` endpoint'ine istek atar ve çıktıları ortak `./output` hacmine (volume) yazar.
+
+---
+
+## 📁 6. Proje Dizin Haritası
+
+```text
+marketing-automation/
+├── .env.example                 # Ortam değişkenleri şablonu
+├── .gitignore                   # Git hariç tutma kuralları
+├── docker-compose.yml           # API ve n8n servis orkestrasyonu
+├── Dockerfile                   # Üretim ortamı multi-stage Docker imajı
+├── README.md                    # Teknik & Mimari dokümantasyon (Türkçe)
+├── USER.md                      # Büyüme & Pazarlama Operatör Kılavuzu (Türkçe)
+├── pyproject.toml               # Tool yapılandırmaları (Ruff, Mypy, Pytest)
+├── requirements.txt             # Bağımlılık listesi
+├── automation/
+│   └── workflow.json            # n8n otomatik içe aktarılabilir cron iş akışı
+├── scripts/
+│   └── setup-n8n.sh             # n8n sıfır temaslı auto-import başlatma betiği
+├── data/                        # Girdi CSV dosyaları
+│   └── daily_marketing_data.csv # Günlük huni metrik verileri
+├── output/                      # Üretilen dinamik rapor çıktıları
+│   ├── anomalies.json           # Ham anomali ve z-skoru JSON çıktısı
+│   ├── top_3_findings.md        # Öncelikli 3 kritik vaka incelemesi
+│   └── sample_briefing.md       # C-Level yönetim özeti
+├── src/                         # Temel Kaynak Kodlar (Clean Architecture)
+│   ├── agent/                   # LLM & Agentik Katman
+│   │   ├── guardrails/          # Verifier (Numeric/Grounding) & Fallback
+│   │   ├── orchestrator.py      # BatchReasoningOrchestrator
+│   │   ├── prompt_templates.py  # Gemini sistem ve kullanıcı promptları
+│   │   └── tools/               # Agent araç tanımları ve kayıt defteri
+│   ├── application/             # Kullanım Senaryoları & Portlar
+│   │   ├── ports/               # Soyut arayüzler (LLM, Reader, Slack)
+│   │   ├── services/            # ArtifactService ve rapor yazıcılar
+│   │   └── use_cases/           # RunPipelineUseCase (Ana İş Akışı)
+│   ├── cli/                     # Komut Satırı Arayüzü (CLI Main)
+│   │   └── main.py              # Headless CLI giriş noktası
+│   ├── domain/                  # İş Kuralları & Varlıklar (Entities)
+│   │   ├── entities.py          # Anomaly, EvidenceDossier, AnalysisResult
+│   │   ├── enums.py             # Severity, RootCause, MetricType
+│   │   └── services.py          # Z-score ve Baseline hesaplama servisleri
+│   ├── infrastructure/          # Dış Entegrasyonlar & Adaptörler
+│   │   ├── data_readers/        # CSVDataReader (Pandas izolasyonu)
+│   │   ├── llm/                 # GeminiLLMClient (Google GenAI SDK)
+│   │   └── notifications/       # SlackNotificationAdapter (Dynamic Block Kit)
+│   └── presentation/            # REST API (FastAPI)
+│       └── api/                 # Endpoint tanımları ve FastAPI uygulaması
+└── tests/                       # Test Süiti (290+ Test, >%90 Coverage)
+    ├── unit/                    # Birim testleri (Domain, Application, Agent, Infra)
+    └── integration/             # Entegrasyon testleri (API, CLI, Docker/n8n)
 ```
 
 ---
 
-## 9. Teknik Kararlar & Kapsam Dışı Bırakılanlar
+## 🧪 7. Test & Kalite Güvencesi
 
-### Alınan Mühendislik Kararları
-- **Pandas İzolasyonu:** Pandas sadece veri okuma ve birleştirme safhasında tutulmuş; Domain ve Application katmanlarına dondurulmuş pure Python dataclass nesneleri geçirilmiştir.
-- **Sıfıra Bölme Güvenliği:** CTR, CPC, CPA ve ROAS hesaplamalarında payda sıfır olduğunda sahte `0.0` dönülmemiş, kesin olarak `None` dönülerek veri kirletilmesi engellenmiştir.
-- **Deterministik Fallback:** OpenAI API anahtarı girilmediğinde veya servis zaman aşımına uğradığında pipeline çökmez; deterministik şablon motoru üzerinden brifing üretmeye devam eder.
+Projede sıfır toleranslı kalite kapıları uygulanmaktadır. Kod değişikliklerinin ardından aşağıdaki doğrulama komutlarını çalıştırın:
 
-### Kapsam Dışı Bırakılanlar (Out of Scope)
-- **Canlı API Bağlantıları:** Süre ve bütçe kısıtı nedeniyle canlı Google/Meta API SDK bağlayıcıları yerine CSV okuyucuları entegre edilmiştir (Mimari `IDataSource` portu ile canlı API'ye hazırdır).
-- **Gerçek Zamanlı WebSocket/SSE:** Sabah brifingi konsepti gereği batch/cron odaklı mimari tercih edilmiş, anlık yayın mimarisi kapsam dışı bırakılmıştır.
+```bash
+# 1. Ruff Linter Denetimi ve Otomatik Düzeltme
+.venv/bin/ruff check src/ tests/ --fix
+
+# 2. Ruff Kod Formatlama Kontrolü
+.venv/bin/ruff format src/ tests/
+
+# 3. Mypy Strict Tip Denetimi (Sıfır Hata Şartı)
+.venv/bin/mypy --strict src/
+
+# 4. Pytest Test Süiti ve Kapsama (Coverage) Raporu
+.venv/bin/pytest tests/ --cov=src --cov-report=term-missing
+```
 
 ---
-
-## 10. Yapay Zekâ Kullanım Beyanı
-
-Bu projenin geliştirilmesi sürecinde **Antigravity (Gemini 3.6 Flash)** yapay zekâ asistanı kullanılmıştır. AI araçları şu aşamalarda şeffaf bir şekilde değerlendirilmiştir:
-1. Clean Architecture katman izolasyon kurallarının ve TDD test senaryolarının tasarlanması,
-2. Edge-case (uç durum) test verilerinin scaffolding süreçleri,
-3. Dokümantasyon ve n8n mermaid şemalarının hazırlanması.
-
-Tüm domain kuralları, Z-score istatistiksel hesaplama mantığı, defensive math kontrolleri, kök neden analizi ve validasyon kodları mühendislik standartlarına uygun şekilde doğrulanmış ve test edilmiştir.
+*Geliştirici ekibine ve operasyon yöneticilerine yönelik detaylı kullanım senaryoları ve Vaka İnceleme Kılavuzu için lütfen [USER.md](file:///home/menasy/Desktop/Marketing-Automation/marketing-automation/USER.md) dosyasını inceleyin.*

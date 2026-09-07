@@ -28,6 +28,14 @@ class PipelineRequest(BaseModel):
         default=None,
         description="Target evaluation date for baseline splitting and anomaly detection",
     )
+    output_dir: str = Field(
+        default="output",
+        description="Target output directory path for generated deliverables",
+    )
+    data_dir: str | None = Field(
+        default=None,
+        description="Optional data directory path containing raw input CSV files",
+    )
 
     # Legacy / Backwards Compatibility Fields
     date_from: str | None = Field(

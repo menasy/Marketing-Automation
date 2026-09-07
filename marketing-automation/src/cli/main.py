@@ -1,6 +1,7 @@
 """Headless CLI application entry point for running the marketing automation pipeline."""
 
 import argparse
+import asyncio
 import sys
 from datetime import date
 
@@ -27,6 +28,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to Meta Ads daily CSV export",
     )
     parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Directory containing google_ads_daily.csv and meta_ads_daily.csv",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="output",
+        help="Directory where artifact deliverables will be written (default: output)",
+    )
+    parser.add_argument(
         "--window-days",
         type=int,
         default=14,
@@ -34,8 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--target-date",
+        "--date",
         type=str,
         default=None,
+        dest="target_date",
         help="Target evaluation date in YYYY-MM-DD format (default: max date in data)",
     )
     parser.add_argument(
@@ -75,13 +90,15 @@ def main(argv: list[str] | None = None) -> int:
         request = PipelineRequest(
             google_csv_path=args.google_csv,
             meta_csv_path=args.meta_csv,
+            data_dir=args.data_dir,
+            output_dir=args.output_dir,
             window_days=args.window_days,
             reporting_currency=args.currency,
             target_date=target_dt,
         )
 
         use_case = RunPipelineUseCase()
-        result = use_case.execute(request)
+        result = asyncio.run(use_case.execute(request))
 
         print("\n==================================================")
         print("     MARKETING AUTOMATION PIPELINE SUMMARY        ")

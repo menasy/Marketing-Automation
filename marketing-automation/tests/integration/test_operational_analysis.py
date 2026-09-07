@@ -16,39 +16,40 @@ def load_test_anomalies() -> list[AnomalyItem]:
 
     if anomalies_file.is_file():
         raw_data = json.loads(anomalies_file.read_text(encoding="utf-8"))
-        items: list[AnomalyItem] = []
-        for d in raw_data:
-            is_valid_plat = d["platform"] in ("google_ads", "meta_ads")
-            p_val = Platform(d["platform"]) if is_valid_plat else Platform.GOOGLE_ADS
-            m_str = d["metric"].lower()
-            m_types = [m.value for m in MetricType]
-            m_val = MetricType(m_str) if m_str in m_types else MetricType.SPEND
-            s_str = d["severity"].lower()
-            s_types = [s.value for s in Severity]
-            s_val = Severity(s_str) if s_str in s_types else Severity.HIGH
-            dir_val = (
-                MetricDirection.LOWER_IS_BETTER
-                if "cpa" in m_str
-                else MetricDirection.HIGHER_IS_BETTER
-            )
-
-            items.append(
-                AnomalyItem(
-                    campaign_name=d["campaign"],
-                    platform=p_val,
-                    country=d["country"],
-                    metric=m_val,
-                    current_value=float(d["current_value"]),
-                    baseline_value=float(d["baseline_value"]),
-                    change_rate=float(d["change_rate"]),
-                    z_score=float(d["z_score"]),
-                    severity=s_val,
-                    direction=dir_val,
-                    detection_method=d.get("detection_method", "rolling_zscore"),
-                    rationale=d.get("rationale", ""),
+        if isinstance(raw_data, list):
+            items: list[AnomalyItem] = []
+            for d in raw_data:
+                is_valid_plat = d["platform"] in ("google_ads", "meta_ads")
+                p_val = Platform(d["platform"]) if is_valid_plat else Platform.GOOGLE_ADS
+                m_str = d["metric"].lower()
+                m_types = [m.value for m in MetricType]
+                m_val = MetricType(m_str) if m_str in m_types else MetricType.SPEND
+                s_str = d["severity"].lower()
+                s_types = [s.value for s in Severity]
+                s_val = Severity(s_str) if s_str in s_types else Severity.HIGH
+                dir_val = (
+                    MetricDirection.LOWER_IS_BETTER
+                    if "cpa" in m_str
+                    else MetricDirection.HIGHER_IS_BETTER
                 )
-            )
-        return items
+
+                items.append(
+                    AnomalyItem(
+                        campaign_name=d["campaign"],
+                        platform=p_val,
+                        country=d["country"],
+                        metric=m_val,
+                        current_value=float(d["current_value"]),
+                        baseline_value=float(d["baseline_value"]),
+                        change_rate=float(d["change_rate"]),
+                        z_score=float(d["z_score"]),
+                        severity=s_val,
+                        direction=dir_val,
+                        detection_method=d.get("detection_method", "rolling_zscore"),
+                        rationale=d.get("rationale", ""),
+                    )
+                )
+            return items
 
     # Fallback test items
     return [

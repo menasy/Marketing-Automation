@@ -1,20 +1,24 @@
 """Unit tests for RunPipelineUseCase orchestrator."""
 
+import asyncio
 import uuid
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
+from src.agent.schemas.reasoning import (
+    BatchAnalysisResult,
+    DiagnosedFinding,
+    Hypothesis,
+    OperationalActionPlan,
+)
 from src.application.dto.normalization_result import NormalizationResult
 from src.application.dto.pipeline_request import PipelineRequest
 from src.application.use_cases.run_pipeline import RunPipelineUseCase
 from src.domain.enums.metric_type import MetricType
-from src.domain.enums.operational import IssueType
 from src.domain.enums.platform import Platform
 from src.domain.enums.severity import Severity
 from src.domain.models.ad_record import NormalizedAdRecord
 from src.domain.models.anomaly import AnomalyItem
-from src.domain.models.briefing import ExecutiveBriefing
-from src.domain.models.operational_finding import OperationalFinding
 
 
 def _create_sample_anomaly(severity: Severity = Severity.CRITICAL) -> AnomalyItem:
@@ -31,6 +35,39 @@ def _create_sample_anomaly(severity: Severity = Severity.CRITICAL) -> AnomalyIte
         direction=MetricType.CPA.value,  # type: ignore[arg-type]
         detection_method="rolling_zscore",
         rationale="CPA spiked significantly",
+    )
+
+
+def _create_sample_batch_result() -> BatchAnalysisResult:
+    return BatchAnalysisResult(
+        findings=[
+            DiagnosedFinding(
+                campaign_name="Search_Brand_US",
+                platform="google_ads",
+                country="US",
+                issue_type="DATA_QUALITY",
+                confidence_score=0.95,
+                root_cause_analysis="Conversion tracking breakdown",
+                competing_hypotheses=[Hypothesis(statement="Tag missing", confidence=0.95)],
+                selected_hypothesis=Hypothesis(statement="Tag missing", confidence=0.95),
+                action_plan=OperationalActionPlan(
+                    budget_action="HOLD_CURRENT_BUDGET",
+                    bid_action="NO_CHANGE",
+                    creative_action="NO_CHANGE",
+                    tracking_action="VERIFY_TAG",
+                    rationale="Check tracking",
+                    concrete_steps=["Check GTM container"],
+                    expected_effect="Restore tracking",
+                    risk_level="LOW",
+                    requires_approval=False,
+                ),
+                metric_change_summary="CPA: $50 → $150 (+200%)",
+                business_impact_narrative="Data tracking breakdown",
+            )
+        ],
+        executive_summary="Executive Briefing Summary",
+        overall_data_health="HEALTHY",
+        analysis_timestamp="2026-09-01T12:00:00Z",
     )
 
 
@@ -62,39 +99,25 @@ def test_run_pipeline_successful_execution_sequence() -> None:
     anomaly_item = _create_sample_anomaly(Severity.CRITICAL)
     mock_detect.detect.return_value = [anomaly_item]
 
-    mock_analyze = MagicMock()
-    mock_analyze.execute.return_value = [
-        OperationalFinding(
-            campaign_name="Search_Brand_US",
-            platform=Platform.GOOGLE_ADS,
-            country="US",
-            primary_metric=MetricType.CPA,
-            severity=Severity.CRITICAL,
-            issue_type=IssueType.PERFORMANCE,
-            evidence_summary="CPA increased 200%",
-            business_impact="High CPA burn",
-            metric_change="CPA: $50 → $150 (+200%)",
-            operational_action="Günlük bütçeyi %20 kısın, hedef CPA/ROAS teklifini güncelleyin.",
-            budget_action="Reduce budget by 20%",
-            bid_action="Lower bid",
-            creative_action="Refresh creative",
-            tracking_action="Verify tracking",
-            score=95.0,
-        )
-    ]
+    mock_batch_orchestrator = MagicMock()
+    mock_batch_orchestrator.run = AsyncMock(return_value=_create_sample_batch_result())
 
-    mock_briefing = MagicMock()
-    mock_briefing.execute.return_value = ExecutiveBriefing(
-        summary="Executive Briefing Summary",
-        raw_markdown="# Executive Briefing",
+    mock_artifact_service = MagicMock()
+    mock_artifact_service.write_all.return_value = (
+        "output/anomalies.json",
+        "output/top_3_findings.md",
+        "output/sample_briefing.md",
     )
+
+    mock_slack = MagicMock()
 
     orchestrator = RunPipelineUseCase(
         normalize_data_use_case=mock_normalize,
         build_baseline_use_case=mock_baseline,
         detect_anomalies_use_case=mock_detect,
-        analyze_findings_use_case=mock_analyze,
-        generate_briefing_use_case=mock_briefing,
+        batch_orchestrator=mock_batch_orchestrator,
+        artifact_service=mock_artifact_service,
+        notification_service=mock_slack,
     )
 
     request = PipelineRequest(
@@ -105,14 +128,13 @@ def test_run_pipeline_successful_execution_sequence() -> None:
         target_date=date(2026, 9, 1),
     )
 
-    result = orchestrator.execute(request)
+    result = asyncio.run(orchestrator.execute(request))
 
     # 1. Verify stage call sequence
     mock_normalize.execute.assert_called_once()
     mock_baseline.execute.assert_called_once()
     mock_detect.detect.assert_called_once()
-    mock_analyze.execute.assert_called_once()
-    mock_briefing.execute.assert_called_once()
+    mock_batch_orchestrator.run.assert_awaited_once()
 
     # 2. Verify UUID4 execution ID
     parsed_uuid = uuid.UUID(result.execution_id)
@@ -126,8 +148,9 @@ def test_run_pipeline_successful_execution_sequence() -> None:
     assert result.stage_statuses["normalize_data"] == "success"
     assert result.stage_statuses["build_baseline"] == "success"
     assert result.stage_statuses["detect_anomalies"] == "success"
-    assert result.stage_statuses["analyze_findings"] == "success"
-    assert result.stage_statuses["generate_briefing"] == "success"
+    assert result.stage_statuses["compile_dossier"] == "success"
+    assert result.stage_statuses["agent_reasoning"] == "success"
+    assert result.stage_statuses["write_artifacts"] == "success"
 
 
 def test_run_pipeline_unique_uuid_per_execution() -> None:
@@ -142,16 +165,20 @@ def test_run_pipeline_unique_uuid_per_execution() -> None:
     mock_detect = MagicMock()
     mock_detect.detect.return_value = []
 
+    mock_batch_orchestrator = MagicMock()
+    mock_batch_orchestrator.run = AsyncMock(return_value=_create_sample_batch_result())
+
     orchestrator = RunPipelineUseCase(
         normalize_data_use_case=mock_normalize,
         build_baseline_use_case=MagicMock(),
         detect_anomalies_use_case=mock_detect,
-        analyze_findings_use_case=MagicMock(),
-        generate_briefing_use_case=MagicMock(),
+        batch_orchestrator=mock_batch_orchestrator,
+        artifact_service=MagicMock(),
+        notification_service=MagicMock(),
     )
 
-    res1 = orchestrator.execute()
-    res2 = orchestrator.execute()
+    res1 = asyncio.run(orchestrator.execute())
+    res2 = asyncio.run(orchestrator.execute())
 
     assert res1.execution_id != res2.execution_id
     assert isinstance(uuid.UUID(res1.execution_id), uuid.UUID)
@@ -159,7 +186,7 @@ def test_run_pipeline_unique_uuid_per_execution() -> None:
 
 
 def test_run_pipeline_fault_tolerance_non_critical_stage_failure() -> None:
-    """Verify LLM briefing failure falls back gracefully without losing previous stage outputs."""
+    """Verify agent reasoning failure falls back gracefully without losing previous outputs."""
     mock_normalize = MagicMock()
     mock_normalize.execute.return_value = NormalizationResult(
         records=[],
@@ -170,21 +197,22 @@ def test_run_pipeline_fault_tolerance_non_critical_stage_failure() -> None:
     mock_detect = MagicMock()
     mock_detect.detect.return_value = [_create_sample_anomaly(Severity.CRITICAL)]
 
-    mock_briefing = MagicMock()
-    mock_briefing.execute.side_effect = RuntimeError("LLM API Provider Timeout")
+    mock_batch_orchestrator = MagicMock()
+    mock_batch_orchestrator.run = AsyncMock(side_effect=RuntimeError("LLM API Provider Timeout"))
 
     orchestrator = RunPipelineUseCase(
         normalize_data_use_case=mock_normalize,
         build_baseline_use_case=MagicMock(),
         detect_anomalies_use_case=mock_detect,
-        analyze_findings_use_case=MagicMock(),
-        generate_briefing_use_case=mock_briefing,
+        batch_orchestrator=mock_batch_orchestrator,
+        artifact_service=MagicMock(),
+        notification_service=MagicMock(),
     )
 
-    result = orchestrator.execute()
+    result = asyncio.run(orchestrator.execute())
 
     assert result.status == "partial_success"
-    assert result.stage_statuses["generate_briefing"] == "fallback"
+    assert result.stage_statuses["agent_reasoning"] == "fallback"
     assert result.anomalies_count == 1
     assert result.critical_count == 1
 
@@ -198,11 +226,12 @@ def test_run_pipeline_critical_stage_failure() -> None:
         normalize_data_use_case=mock_normalize,
         build_baseline_use_case=MagicMock(),
         detect_anomalies_use_case=MagicMock(),
-        analyze_findings_use_case=MagicMock(),
-        generate_briefing_use_case=MagicMock(),
+        batch_orchestrator=MagicMock(),
+        artifact_service=MagicMock(),
+        notification_service=MagicMock(),
     )
 
-    result = orchestrator.execute()
+    result = asyncio.run(orchestrator.execute())
 
     assert result.status == "failed"
     assert result.stage_statuses["normalize_data"] == "failed"

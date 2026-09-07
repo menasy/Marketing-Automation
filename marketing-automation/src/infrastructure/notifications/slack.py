@@ -1,13 +1,22 @@
 import logging
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 import httpx
 
+from src.agent.schemas.reasoning import BatchAnalysisResult
 from src.application.ports.notification import INotificationService
 from src.domain.models.briefing import ExecutiveBriefing
+from src.domain.models.evidence_dossier import EvidenceDossier
 from src.infrastructure.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+_HEALTH_EMOJI: dict[str, str] = {
+    "HEALTHY": "🟢",
+    "DEGRADED": "🟡",
+    "CRITICAL": "🔴",
+}
 
 _SEVERITY_EMOJI: dict[str, str] = {
     "CRITICAL": "🔴",
@@ -33,12 +42,161 @@ class SlackNotificationService(INotificationService):
 
     def send(self, briefing: ExecutiveBriefing) -> bool:
         """Dispatches an executive briefing to Slack webhook using Block Kit format."""
+        return self.send_briefing(briefing=briefing)
+
+    def send_briefing(
+        self,
+        briefing: ExecutiveBriefing | None = None,
+        dossier: EvidenceDossier | None = None,
+        result: BatchAnalysisResult | None = None,
+    ) -> bool:
+        """Dispatches a dynamic marketing anomaly briefing to Slack webhook.
+
+        Supports both BatchAnalysisResult (agentic flow) and ExecutiveBriefing (legacy flow).
+        """
         if not self._webhook_url:
             logger.warning("Slack notification skipped: SLACK_WEBHOOK_URL is not configured.")
             return False
 
-        payload = self.build_briefing_block_kit(briefing)
+        if result is not None:
+            payload = self.build_agent_briefing_block_kit(result=result, dossier=dossier)
+        elif briefing is not None:
+            payload = self.build_briefing_block_kit(briefing=briefing)
+        else:
+            logger.warning("Slack notification skipped: neither result nor briefing provided.")
+            return False
+
         return self._post_payload(payload)
+
+    def build_agent_briefing_block_kit(
+        self,
+        result: BatchAnalysisResult,
+        dossier: EvidenceDossier | None = None,
+    ) -> dict[str, object]:
+        """Constructs dynamic Slack Block Kit payload from BatchAnalysisResult & dossier.
+
+        Args:
+            result: Gemini agent BatchAnalysisResult with verified diagnoses & action plans.
+            dossier: Optional statistical EvidenceDossier entity.
+
+        Returns:
+            Structured Block Kit payload dictionary with zero static strings.
+        """
+        health_status = (result.overall_data_health or "HEALTHY").upper()
+        health_badge = _HEALTH_EMOJI.get(health_status, "🟡")
+
+        target_date = dossier.target_date if dossier and dossier.target_date else "Today"
+
+        blocks: list[dict[str, object]] = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": f"🚨 Marketing Anomaly Briefing | {target_date} {health_badge}",
+                    "emoji": True,
+                },
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Executive Summary:*\n{result.executive_summary}",
+                },
+            },
+            {"type": "divider"},
+        ]
+
+        # Dynamic Top Findings Blocks (up to 3 findings)
+        for idx, finding in enumerate(result.findings[:3], start=1):
+            issue_raw = finding.issue_type.upper()
+            if "DATA" in issue_raw or "TRACKING" in issue_raw or "VERİ" in issue_raw:
+                issue_badge = "[VERİ / TRACKING HATASI]"
+            else:
+                issue_badge = "[GERÇEK PERFORMANS DÜŞÜŞÜ]"
+
+            confidence_pct = round(finding.confidence_score * 100)
+
+            finding_header = (
+                f"*{idx}. {finding.campaign_name}* ({finding.platform} - {finding.country})\n"
+                f"📌 *Teşhis:* `{issue_badge}` | *Güven:* %{confidence_pct}\n"
+                f"📊 *Metrik Değişimi:* {finding.metric_change_summary}"
+            )
+
+            root_cause_text = f"*Kök Neden Analizi:*\n{finding.root_cause_analysis}"
+
+            # Operational action vector breakdown
+            action_plan = finding.action_plan
+            action_vector_text = (
+                f"*Operasyonel Aksiyonlar:*\n"
+                f"• *Bütçe:* `{action_plan.budget_action}`\n"
+                f"• *Teklif:* `{action_plan.bid_action}`\n"
+                f"• *Kreatif:* `{action_plan.creative_action}`\n"
+                f"• *Takip:* `{action_plan.tracking_action}`"
+            )
+
+            concrete_steps_text = ""
+            if action_plan.concrete_steps:
+                first_two_steps = action_plan.concrete_steps[:2]
+                steps_formatted = "\n".join(
+                    f"  {step_idx}. {step}"
+                    for step_idx, step in enumerate(first_two_steps, start=1)
+                )
+                concrete_steps_text = f"\n*Somut Adımlar:*\n{steps_formatted}"
+
+            finding_body = (
+                f"{finding_header}\n\n"
+                f"{root_cause_text}\n\n"
+                f"{action_vector_text}"
+                f"{concrete_steps_text}"
+            )
+
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": finding_body,
+                    },
+                }
+            )
+
+            if idx < len(result.findings[:3]):
+                blocks.append({"type": "divider"})
+
+        # Context / Footer block
+        blocks.append({"type": "divider"})
+
+        anomalies_cnt = dossier.total_anomalies_detected if dossier else len(result.findings)
+        spend_at_risk = 0.0
+        if dossier:
+            spend_at_risk = sum(c.financial_impact_score for c in dossier.top_campaign_evidence)
+
+        timestamp_str = (
+            result.analysis_timestamp
+            if result.analysis_timestamp
+            else datetime.now(UTC).isoformat()
+        )
+
+        footer_text = (
+            f"🕒 *Zaman:* {timestamp_str} | "
+            f"⚡ *Toplam Anomali:* {anomalies_cnt} | "
+            f"💰 *Spend at Risk:* ${spend_at_risk:,.2f}\n"
+            f"📄 *Detaylı Rapor:* `output/top_3_findings.md`"
+        )
+
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": footer_text,
+                    }
+                ],
+            }
+        )
+
+        return {"blocks": blocks}
 
     def build_briefing_block_kit(
         self,
@@ -81,7 +239,6 @@ class SlackNotificationService(INotificationService):
             },
         ]
 
-        # Inject structured top-3 findings if available (overrides generic findings)
         if top_3_findings:
             findings_blocks = self.build_findings_block_kit(top_3_findings)
             blocks.extend(findings_blocks)
@@ -116,15 +273,7 @@ class SlackNotificationService(INotificationService):
     def build_findings_block_kit(
         findings: list[dict[str, str]],
     ) -> list[dict[str, object]]:
-        """Build Slack Block Kit sections for top-3 operational findings.
-
-        Args:
-            findings: List of finding dicts with keys: campaign_name, platform,
-                country, metric_change, issue_type, operational_action, severity, score.
-
-        Returns:
-            List of Slack Block Kit block dicts to be appended to the message blocks.
-        """
+        """Build Slack Block Kit sections for top-3 operational findings."""
         blocks: list[dict[str, object]] = [
             {
                 "type": "section",
@@ -163,7 +312,6 @@ class SlackNotificationService(INotificationService):
                     },
                 }
             )
-            # Add divider between findings but not after the last one
             if idx < len(findings):
                 blocks.append({"type": "divider"})
 

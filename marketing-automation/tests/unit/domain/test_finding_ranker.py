@@ -1,16 +1,11 @@
 """Unit tests for FindingRanker pure domain service."""
 
 from src.domain.enums.metric_type import MetricDirection, MetricType
-from src.domain.enums.operational import (
-    BidAction,
-    BudgetAction,
-    CreativeAction,
-    IssueType,
-    TrackingAction,
-)
+from src.domain.enums.operational import IssueType
 from src.domain.enums.platform import Platform
 from src.domain.enums.severity import Severity
 from src.domain.models.anomaly import AnomalyItem
+from src.domain.models.data_quality_signal import DataQualitySignalType
 from src.domain.services.finding_ranker import FindingRanker
 
 
@@ -54,15 +49,14 @@ def test_zero_conversions_ongoing_spend_classified_as_data_quality() -> None:
     assert finding.platform == Platform.GOOGLE_ADS
     assert finding.issue_type == IssueType.DATA_QUALITY
     assert finding.severity == Severity.CRITICAL
-    assert finding.tracking_action == TrackingAction.AUDIT_PIXEL_CAPI
-    assert finding.creative_action == CreativeAction.NO_ACTION
-    assert finding.budget_action == BudgetAction.HOLD
-    assert finding.bid_action == BidAction.NO_CHANGE
-    # New fields: metric_change and operational_action
     assert "CONVERSIONS" in finding.metric_change
     assert "→" in finding.metric_change
-    assert "CAPI/Pixel" in finding.operational_action or "GTM" in finding.operational_action
-    assert "kapatmayın" in finding.operational_action
+    assert len(finding.data_quality_signals) >= 1
+
+    target_sig_type = DataQualitySignalType.ZERO_CONVERSIONS_WITH_ACTIVE_SPEND
+    dq_signal = next(s for s in finding.data_quality_signals if s.signal_type == target_sig_type)
+    assert dq_signal.is_triggered is True
+    assert "dropped from 50.00 to 0.00" in dq_signal.factual_statement
 
 
 def test_ctr_collapse_with_rising_cpa_classified_as_performance() -> None:
@@ -79,7 +73,7 @@ def test_ctr_collapse_with_rising_cpa_classified_as_performance() -> None:
         severity=Severity.HIGH,
         direction=MetricDirection.HIGHER_IS_BETTER,
         detection_method="z_score",
-        rationale="CTR collapsed due to creative fatigue.",
+        rationale="CTR collapsed.",
     )
     anomaly_cpa = AnomalyItem(
         campaign_name="EU_Retargeting_Meta",
@@ -104,17 +98,8 @@ def test_ctr_collapse_with_rising_cpa_classified_as_performance() -> None:
     assert finding.campaign_name == "EU_Retargeting_Meta"
     assert finding.platform == Platform.META_ADS
     assert finding.issue_type == IssueType.PERFORMANCE
-    assert finding.creative_action == CreativeAction.REFRESH_FATIGUED_CREATIVES
-    assert finding.tracking_action == TrackingAction.NO_ACTION
-    assert finding.budget_action == BudgetAction.DECREASE
-    assert finding.bid_action == BidAction.ADJUST_TARGET_CPA_ROAS
-    # New fields: metric_change and operational_action
     assert "CTR" in finding.metric_change
     assert "CPA" in finding.metric_change
-    assert (
-        "bütçeyi" in finding.operational_action.lower()
-        or "kısın" in finding.operational_action.lower()
-    )
 
 
 def test_multiple_anomalies_same_campaign_merged_into_single_finding() -> None:
@@ -170,17 +155,14 @@ def test_multiple_anomalies_same_campaign_merged_into_single_finding() -> None:
     finding = findings[0]
 
     assert finding.campaign_name == "Global_Prospecting"
-    assert finding.severity == Severity.CRITICAL  # Merged max severity
+    assert finding.severity == Severity.CRITICAL
     assert "ROAS" in finding.evidence_summary or "CPA" in finding.evidence_summary
-    # metric_change should contain all three anomalied metrics
     assert "ROAS" in finding.metric_change or "CPA" in finding.metric_change
-    assert finding.operational_action  # Non-empty action string
 
 
 def test_ranking_order_highest_business_impact_first_and_capped_at_top_3() -> None:
-    """Verify that findings are ranked by severity score descending and strictly capped at top 3."""
+    """Verify that findings are ranked by severity score descending and capped at top 3."""
     anomalies = [
-        # Campaign 1: Low impact
         AnomalyItem(
             campaign_name="Campaign_Low",
             platform=Platform.META_ADS,
@@ -195,7 +177,6 @@ def test_ranking_order_highest_business_impact_first_and_capped_at_top_3() -> No
             detection_method="z_score",
             rationale="Minor spend fluctuation.",
         ),
-        # Campaign 2: Critical Data Quality Issue (Highest impact)
         AnomalyItem(
             campaign_name="Campaign_Critical_DQ",
             platform=Platform.GOOGLE_ADS,
@@ -224,7 +205,6 @@ def test_ranking_order_highest_business_impact_first_and_capped_at_top_3() -> No
             detection_method="z_score",
             rationale="High ongoing spend.",
         ),
-        # Campaign 3: High Performance Issue
         AnomalyItem(
             campaign_name="Campaign_High_Perf",
             platform=Platform.META_ADS,
@@ -239,7 +219,6 @@ def test_ranking_order_highest_business_impact_first_and_capped_at_top_3() -> No
             detection_method="z_score",
             rationale="High CPA spike.",
         ),
-        # Campaign 4: Medium Performance Issue
         AnomalyItem(
             campaign_name="Campaign_Med_Perf",
             platform=Platform.GOOGLE_ADS,
@@ -262,8 +241,6 @@ def test_ranking_order_highest_business_impact_first_and_capped_at_top_3() -> No
     assert findings[0].campaign_name == "Campaign_Critical_DQ"
     assert findings[1].campaign_name == "Campaign_High_Perf"
     assert findings[2].campaign_name == "Campaign_Med_Perf"
-
-    # Verify scores are strictly in descending order
     assert findings[0].score >= findings[1].score >= findings[2].score
 
 

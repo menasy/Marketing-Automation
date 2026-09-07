@@ -65,7 +65,7 @@ def test_prompt_loader_render_with_anomaly_items() -> None:
 
     rendered = loader.render_prompt(anomalies=[anomaly])
 
-    assert "Advertising Performance Analyst" in rendered
+    assert "Senior Performance Marketing Lead" in rendered
     assert "Search_Brand_US" in rendered
     assert "google_ads" in rendered
     assert "spend" in rendered

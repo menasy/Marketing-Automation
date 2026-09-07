@@ -26,6 +26,17 @@
       ]
     },
     {
+      "parameters": {},
+      "id": "2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        460
+      ]
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "http://api:8000/api/v1/pipeline/run",
@@ -40,12 +51,12 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{}",
+        "jsonBody": "={\n  \"target_date\": \"{{ $now.minus({days: 1}).toFormat('yyyy-MM-dd') }}\",\n  \"data_dir\": \"data\",\n  \"output_dir\": \"output\"\n}",
         "options": {
           "timeout": 60000
         }
       },
-      "id": "2",
+      "id": "3",
       "name": "HTTP Request Node",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -80,7 +91,7 @@
         },
         "options": {}
       },
-      "id": "3",
+      "id": "4",
       "name": "IF Condition Node",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -93,7 +104,7 @@
       "parameters": {
         "jsCode": "const data = $input.first().json;\nlet summary = data.briefing_summary || 'Günlük pazarlama performansı brifingi başarıyla oluşturuldu.';\n\nsummary = summary\n  .replace(/^-\\s*\\*\\*[^*]+\\*\\*:\\s*/gm, '')\n  .replace(/^-\\s*/gm, '')\n  .trim();\n\nconst anomalyCount = data.anomalies_count !== undefined ? data.anomalies_count : 0;\nconst topFindings = data.top_3_findings || [];\nconst dateStr = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });\n\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"📊 Günlük Pazarlama Performans Brifingi\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"context\",\n    \"elements\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Günaydın Pazarlama Ekibi*  |  📅 *Tarih:* ${dateStr}  |  🚨 *Toplam Anomali:* ${anomalyCount}`\n      }\n    ]\n  },\n  { \"type\": \"divider\" },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*📌 Yönetici Özeti*\\n${summary}`\n    }\n  }\n];\n\nif (topFindings.length > 0) {\n  blocks.push({ \"type\": \"divider\" });\n  blocks.push({\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*🎯 Önemli Operasyonel Bulgular ve Aksiyonlar*\"\n    }\n  });\n\n  topFindings.forEach((f, idx) => {\n    const findingText = `*${idx + 1}. Kampanya:* \\`${f.campaign_name}\\` (${f.platform} • ${f.country})\\n` +\n      `• *Metrik Değişimi:* ${f.metric_change}\\n` +\n      `• *Teşhis:* *${f.issue_type}*\\n` +\n      `• *Aksiyon:* ${f.operational_action}`;\n\n    blocks.push({\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": findingText\n      }\n    });\n  });\n}\n\nblocks.push({ \"type\": \"divider\" });\n\nreturn [{ json: { blocks, summary, anomalies_count: anomalyCount, top_3_findings: topFindings } }];"
       },
-      "id": "4",
+      "id": "5",
       "name": "Format Slack Success Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -120,7 +131,7 @@
         "jsonBody": "={{ JSON.stringify({ blocks: $json.blocks }) }}",
         "options": {}
       },
-      "id": "5",
+      "id": "6",
       "name": "Send Slack Briefing",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -131,9 +142,9 @@
     },
     {
       "parameters": {
-        "jsCode": "const inputJson = $input.first() ? $input.first().json : {};\nconst executionId = inputJson.execution_id || inputJson.executionId || $execution.id;\nconst failedStage = inputJson.failed_stage || inputJson.stage || 'Pipeline Execution';\nconst errorMessage = inputJson.error || inputJson.message || 'Unknown pipeline execution failure';\nconst timestamp = new Date().toISOString();\n\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"\ud83d\udea8 CRITICAL ALERT: Pipeline Execution Failed\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"fields\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Execution ID:* ${executionId}`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Channel:* #marketing-alerts-critical`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Failed Stage:* ${failedStage}`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Timestamp:* ${timestamp}`\n      }\n    ]\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Error Details:*\\n\\`\\`\\`${errorMessage}\\`\\`\\``\n    }\n  }\n];\n\nreturn [{ json: { channel: \"#marketing-alerts-critical\", blocks, execution_id: executionId, failed_stage: failedStage, error_message: errorMessage, timestamp } }];"
+        "jsCode": "const inputJson = $input.first() ? $input.first().json : {};\nconst executionId = inputJson.execution_id || inputJson.executionId || $execution.id;\nconst failedStage = inputJson.failed_stage || inputJson.stage || 'Pipeline Execution';\nconst errorMessage = inputJson.error || inputJson.message || 'Unknown pipeline execution failure';\nconst timestamp = new Date().toISOString();\n\nconst blocks = [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"🚨 CRITICAL ALERT: Pipeline Execution Failed\",\n      \"emoji\": true\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"fields\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Execution ID:* ${executionId}`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Channel:* #marketing-alerts-critical`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Failed Stage:* ${failedStage}`\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Timestamp:* ${timestamp}`\n      }\n    ]\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": `*Error Details:*\\n\\`\\`\\`${errorMessage}\\`\\`\\``\n    }\n  }\n];\n\nreturn [{ json: { channel: \"#marketing-alerts-critical\", blocks, execution_id: executionId, failed_stage: failedStage, error_message: errorMessage, timestamp } }];"
       },
-      "id": "6",
+      "id": "7",
       "name": "Format Slack Emergency Alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -160,7 +171,7 @@
         "jsonBody": "={{ JSON.stringify({ channel: '#marketing-alerts-critical', blocks: $json.blocks }) }}",
         "options": {}
       },
-      "id": "7",
+      "id": "8",
       "name": "Send Emergency Alert to #marketing-alerts-critical",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -172,6 +183,17 @@
   ],
   "connections": {
     "Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
       "main": [
         [
           {
