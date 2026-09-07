@@ -1,7 +1,9 @@
 """Unit tests for dynamic Markdown & JSON artifact writers and ArtifactService coordinator."""
 
 import json
+import re
 from pathlib import Path
+from unittest.mock import patch
 
 from src.agent.schemas.reasoning import (
     BatchAnalysisResult,
@@ -20,8 +22,31 @@ from src.domain.models.evidence_dossier import (
 )
 from src.infrastructure.reporting.artifact_service import ArtifactService
 from src.infrastructure.reporting.briefing_writer import ExecutiveBriefingWriter
+from src.infrastructure.reporting.io_utils import safe_write_text
 from src.infrastructure.reporting.json_exporter import JsonAnomalyExporter
 from src.infrastructure.reporting.operational_report import TopFindingsReportWriter
+
+# Raw enum patterns that MUST NOT appear in user-facing Markdown output
+_FORBIDDEN_RAW_ENUMS: list[str] = [
+    "HOLD_CURRENT_BUDGET",
+    "DECREASE_BUDGET",
+    "INCREASE_BUDGET",
+    "REDUCE_BUDGET",
+    "PAUSE_CAMPAIGN",
+    "CAP_TARGET_CPA",
+    "SWITCH_TO_MANUAL_CPC",
+    "ROTATE_CREATIVES",
+    "ROTATE_FATIGUED_CREATIVES",
+    "REFRESH_FATIGUED_CREATIVES",
+    "PAUSE_FATIGUED_ADS",
+    "AUDIT_PIXEL_CAPI",
+    "VERIFY_EVENT_DEDUPLICATION",
+    "SWITCH_STRATEGY",
+    "ADJUST_TARGET_CPA_ROAS",
+    "RUN_A_B_TEST",
+    "AUDIT_LANDING_PAGE",
+    "VERIFY_GTM_TAGS",
+]
 
 
 def _create_sample_dossier() -> EvidenceDossier:
@@ -228,7 +253,7 @@ def test_top_findings_report_writer_renders_case_study_questions(tmp_path: Path)
     content = writer.render_and_save(result, out_path)
 
     assert out_path.is_file()
-    assert "# Executive Operational Report: Top 3 Critical Findings" in content
+    assert "# Operasyonel Yönetici Raporu: En Kritik 3 Bulgu" in content
 
     # Check Question 1 & Question 2 explicit section headers
     q1 = (
@@ -240,14 +265,54 @@ def test_top_findings_report_writer_renders_case_study_questions(tmp_path: Path)
     assert q1 in content
     assert q2 in content
 
-    # Check dynamic badges
+    # Check dynamic badges — Turkish
     assert "[VERİ / TRACKING HATASI]" in content
     assert "[GERÇEK PERFORMANS DÜŞÜŞÜ]" in content
 
-    # Check injected Agent rationale & concrete steps
-    assert "AUDIT_GOOGLE_TAG_MANAGER_PURCHASE_PIXEL" in content
+    # Check Turkish localized action labels are present
+    assert "Mevcut Bütçeyi Koru" in content
+    assert "Dönüşüm Takip Kurulumunu" in content
+
+    # Check injected Agent concrete steps (free-form text preserved)
     assert "1. Verify Google Tag Manager container trigger for purchase page." in content
     assert "2. Check Google Ads Conversion Health diagnosis tab for dropped tags." in content
+
+
+def test_no_raw_enum_leak_in_top_findings_report(tmp_path: Path) -> None:
+    """Verify zero raw English enum strings leak into rendered Markdown report."""
+    result = _create_sample_batch_result()
+    writer = TopFindingsReportWriter()
+    out_path = tmp_path / "top_3_findings.md"
+
+    content = writer.render_and_save(result, out_path)
+
+    for forbidden in _FORBIDDEN_RAW_ENUMS:
+        pattern = rf"`{re.escape(forbidden)}`"
+        matches = re.findall(pattern, content)
+        assert len(matches) == 0, (
+            f"Forbidden raw enum '{forbidden}' leaked into report ({len(matches)} occurrences)"
+        )
+
+
+def test_turkish_action_labels_in_report(tmp_path: Path) -> None:
+    """Verify Turkish localized action labels appear in the operational report."""
+    result = _create_sample_batch_result()
+    writer = TopFindingsReportWriter()
+    content = writer.render(result)
+
+    # Turkish action labels must replace raw enums
+    assert "Mevcut Bütçeyi Koru (24 Saat Gözlem)" in content
+    assert "Değişiklik Gerekmiyor" in content
+    assert "Kademeli Bütçe Kısıtlaması" in content
+    assert "Hedef CPA / tROAS Teklif Tavanı Belirle" in content
+    assert "Yeni Kreatif Varyasyonları Test Et" in content
+
+    # Turkish structural labels
+    assert "Bütçe Aksiyonu" in content
+    assert "Teklif Aksiyonu" in content
+    assert "Kreatif Aksiyonu" in content
+    assert "Takip Aksiyonu" in content
+    assert "Aksiyon Gerekçesi" in content
 
 
 def test_top_findings_report_writer_enforces_top_3_limit(tmp_path: Path) -> None:
@@ -269,6 +334,16 @@ def test_top_findings_report_writer_enforces_top_3_limit(tmp_path: Path) -> None
     assert content.count("## Bulgu ") == 3
 
 
+def test_word_count_constraint_1200(tmp_path: Path) -> None:
+    """Verify operational_assessment.md word count stays ≤ 1200 words."""
+    result = _create_sample_batch_result()
+    writer = TopFindingsReportWriter()
+    content = writer.render(result)
+
+    words = content.split()
+    assert len(words) <= 1200, f"Report word count ({len(words)}) exceeds 1200 word limit"
+
+
 # =============================================================================
 # ExecutiveBriefingWriter Tests
 # =============================================================================
@@ -285,12 +360,45 @@ def test_executive_briefing_writer_renders_c_level_briefing(tmp_path: Path) -> N
     content = writer.render_and_save(result, out_path, dossier=dossier)
 
     assert out_path.is_file()
-    assert "# Executive Briefing: Daily Marketing & Data Intelligence" in content
-    assert "🟡 DEGRADED" in content
+    assert "# Yönetici Brifingi: Günlük Pazarlama ve Veri İstihbaratı" in content
+    assert "🟡 DÜŞÜK PERFORMANS" in content
     assert result.executive_summary in content
-    assert "| Campaign | Platform | Country | Issue Classification |" in content
+    assert "| Kampanya | Platform | Ülke | Teşhis Sınıfı |" in content
     assert "US_Google_Search_Brand" in content
     assert "EU_Meta_Retargeting" in content
+
+
+def test_executive_briefing_turkish_headers(tmp_path: Path) -> None:
+    """Verify briefing uses Turkish section headers and meta labels."""
+    result = _create_sample_batch_result()
+    dossier = _create_sample_dossier()
+
+    writer = ExecutiveBriefingWriter()
+    content = writer.render(result, dossier=dossier)
+
+    assert "Hedef Analiz Tarihi" in content
+    assert "Veri Sağlığı Durumu" in content
+    assert "Çalıştırma Zamanı" in content
+    assert "Yönetici Özet Narratifi" in content
+    assert "Portföy Etki Özeti" in content
+    assert "Birincil Gerekçe / Kök Neden" in content
+
+
+def test_executive_briefing_no_raw_enum_leak(tmp_path: Path) -> None:
+    """Verify zero raw English enum labels leak into executive briefing."""
+    result = _create_sample_batch_result()
+    dossier = _create_sample_dossier()
+
+    writer = ExecutiveBriefingWriter()
+    content = writer.render(result, dossier=dossier)
+
+    # Issue type enums should not appear as standalone labels
+    assert "**[DATA_QUALITY]**" not in content
+    assert "**[PERFORMANCE]**" not in content
+
+    # Turkish badges must be present
+    assert "[VERİ / TRACKING HATASI]" in content
+    assert "[GERÇEK PERFORMANS DÜŞÜŞÜ]" in content
 
 
 # =============================================================================
@@ -328,6 +436,29 @@ def test_artifact_service_write_all_atomic_delivery(tmp_path: Path) -> None:
     json_data = json.loads(anomalies_path.read_text(encoding="utf-8"))
     assert json_data["target_date"] == "2026-09-07"
 
-    # Verify Markdown contents are non-empty
-    assert "Executive Operational Report" in op_path.read_text(encoding="utf-8")
-    assert "Executive Briefing" in briefing_path.read_text(encoding="utf-8")
+    # Verify Markdown contents are non-empty — Turkish headers
+    assert "Operasyonel Yönetici Raporu" in op_path.read_text(encoding="utf-8")
+    assert "Yönetici Brifingi" in briefing_path.read_text(encoding="utf-8")
+
+
+def test_safe_write_text_resilience_on_permission_error(tmp_path: Path) -> None:
+    """Verify safe_write_text unlinks un-writable existing files and succeeds on rewrite."""
+    target_file = tmp_path / "test_file.txt"
+    target_file.write_text("initial content", encoding="utf-8")
+
+    # Mock Path.write_text to raise PermissionError on first call, succeed on second call
+    original_write = Path.write_text
+    calls = 0
+
+    def mock_write_text(self_path: Path, data: str, encoding: str = "utf-8") -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise PermissionError("Simulated permission denied on existing host file")
+        return original_write(self_path, data, encoding=encoding)
+
+    with patch.object(Path, "write_text", new=mock_write_text):
+        result_path = safe_write_text(target_file, "new resilient content")
+
+    assert result_path.is_file()
+    assert result_path.read_text(encoding="utf-8") == "new resilient content"

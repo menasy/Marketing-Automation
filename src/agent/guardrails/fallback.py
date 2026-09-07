@@ -36,12 +36,13 @@ class DeterministicFallbackGenerator:
         overall_health = "CRITICAL" if has_any_dq else "DEGRADED"
 
         exec_prefix = (
-            "[DETERMINISTIC FALLBACK - AGENT UNASSISTED] Verification failed after retry. "
-            "Displaying pre-computed factual evidence."
+            "[DETERMINISTIC FALLBACK - AGENT UNASSISTED] "
+            "Doğrulama yeniden denemeden sonra başarısız oldu. "
+            "Önceden hesaplanmış olgusal kanıtlar gösteriliyor."
         )
         exec_summary = (
-            f"{exec_prefix} Impacted campaigns: {dossier.total_campaigns_impacted}, "
-            f"Total anomalies: {dossier.total_anomalies_detected}."
+            f"{exec_prefix} Etkilenen kampanyalar: {dossier.total_campaigns_impacted}, "
+            f"Toplam anomali: {dossier.total_anomalies_detected}."
         )
 
         findings: list[DiagnosedFinding] = [
@@ -67,7 +68,7 @@ class DeterministicFallbackGenerator:
             if sig.is_triggered and sig.factual_statement
         ]
         if not dq_evidence and has_dq_signals:
-            dq_evidence = ["Triggered data quality irregularity signal."]
+            dq_evidence = ["Veri kalitesi düzensizlik sinyali tetiklendi."]
 
         perf_evidence = [
             f"{name} delta: {m.delta_pct}%"
@@ -75,17 +76,17 @@ class DeterministicFallbackGenerator:
             if m.delta_pct is not None
         ]
         if not perf_evidence:
-            perf_evidence = [f"Spend active at ${ce.spend}."]
+            perf_evidence = [f"Aktif harcama: ${ce.spend}."]
 
         hyp_a = Hypothesis(
-            statement="Hypothesis A: Data Quality / Tracking Signal Anomaly",
+            statement="Hipotez A: Veri Kalitesi / Tracking Sinyal Anomalisi",
             supporting_evidence=dq_evidence if has_dq_signals else [],
             contradictory_evidence=[],
             confidence=1.0 if has_dq_signals else 0.0,
             missing_evidence=[],
         )
         hyp_b = Hypothesis(
-            statement="Hypothesis B: Funnel Performance Degradation",
+            statement="Hipotez B: Dönüşüm Hunisi Performans Düşüşü",
             supporting_evidence=perf_evidence if not has_dq_signals else [],
             contradictory_evidence=[],
             confidence=1.0 if not has_dq_signals else 0.0,
@@ -99,20 +100,23 @@ class DeterministicFallbackGenerator:
             bid_action="NO_CHANGE",
             creative_action="NO_ACTION",
             tracking_action="AUDIT_TRACKING_AND_DATA_QUALITY",
-            rationale="Fallback mode activated due to unverified AI output or API failure.",
+            rationale=(
+                "Doğrulanmamış AI çıktısı veya API hatası nedeniyle "
+                "fallback modu etkinleştirildi."
+            ),
             concrete_steps=[
-                "Audit tracking infrastructure",
-                "Review baseline metrics manually",
+                "Tracking altyapısını (Pixel / CAPI / GTM) denetle",
+                "Temel metrikleri manuel olarak gözden geçir",
             ],
-            expected_effect="Prevent unverified automated changes",
+            expected_effect="Doğrulanmamış otomatik değişiklikleri önle",
             risk_level="LOW",
             requires_approval=True,
         )
 
-        root_cause = f"Factual fallback summary for campaign '{ce.campaign_name}': " + (
+        root_cause = f"'{ce.campaign_name}' kampanyası için olgusal fallback özeti: " + (
             "; ".join(dq_evidence)
             if has_dq_signals
-            else f"Funnel metric changes detected. Spend: ${ce.spend}."
+            else f"Dönüşüm hunisi metrik değişimleri tespit edildi. Harcama: ${ce.spend}."
         )
 
         metric_summary = f"Spend: ${ce.spend}. " + ", ".join(
@@ -122,7 +126,7 @@ class DeterministicFallbackGenerator:
         )
 
         business_impact = (
-            f"Impact score: {ce.financial_impact_score}. Campaign spend at ${ce.spend}."
+            f"Etki skoru: {ce.financial_impact_score}. Kampanya harcaması: ${ce.spend}."
         )
 
         return DiagnosedFinding(

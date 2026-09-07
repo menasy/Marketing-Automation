@@ -118,7 +118,7 @@ def test_slack_failure_alert_formatting() -> None:
     assert json_body["channel"] == "#marketing-alerts-critical"
     blocks = json_body["blocks"]
     alert_header_found = any(
-        "🚨 CRITICAL ALERT" in b.get("text", {}).get("text", "") for b in blocks if "text" in b
+        "🚨 KRİTİK UYARI" in b.get("text", {}).get("text", "") for b in blocks if "text" in b
     )
     assert alert_header_found is True
 

@@ -64,9 +64,9 @@ def test_operational_report_writer_renders_and_saves_file(tmp_path: Path) -> Non
     saved_content = target_file.read_text(encoding="utf-8")
     assert saved_content == rendered_text
 
-    # Section layout checks
-    assert "# Executive Operational Report: Top 3 Critical Findings" in saved_content
-    assert "Summary Matrix" in saved_content
+    # Section layout checks — Turkish headers
+    assert "# Operasyonel Yönetici Raporu: En Kritik 3 Bulgu" in saved_content
+    assert "Özet Matrisi" in saved_content
     assert "US_Search_Brand" in saved_content
     assert "EU_Retargeting_Meta" in saved_content
 
@@ -80,9 +80,23 @@ def test_operational_report_writer_renders_and_saves_file(tmp_path: Path) -> Non
     assert q1 in saved_content
     assert q2 in saved_content
 
-    # Word count length constraint check (Max 1 page ~ 400-600 words, <= 800 words)
+    # Turkish localized action labels — no raw enum leakage
+    assert "Mevcut Bütçeyi Koru" in saved_content
+    assert "Kademeli Bütçe Kısıtlaması" in saved_content
+    assert "Dönüşüm Takip Kurulumunu" in saved_content
+    assert "Değişiklik Gerekmiyor" in saved_content
+
+    # Turkish issue badges
+    assert "[VERİ / TRACKING HATASI]" in saved_content
+    assert "[GERÇEK PERFORMANS DÜŞÜŞÜ]" in saved_content
+
+    # Turkish severity labels
+    assert "🔴 KRİTİK" in saved_content
+    assert "🟠 YÜKSEK" in saved_content
+
+    # Word count length constraint check (Max 1200 words)
     words = saved_content.split()
-    assert len(words) <= 800, f"Report word count ({len(words)}) exceeds 1 page limit (800 words)"
+    assert len(words) <= 1200, f"Report word count ({len(words)}) exceeds 1200 word limit"
 
 
 def test_operational_report_writer_empty_findings(tmp_path: Path) -> None:
@@ -93,4 +107,4 @@ def test_operational_report_writer_empty_findings(tmp_path: Path) -> None:
     rendered = writer.render_and_save([], str(target_file))
 
     assert target_file.is_file()
-    assert "No critical operational anomalies" in rendered
+    assert "kritik operasyonel anomali" in rendered

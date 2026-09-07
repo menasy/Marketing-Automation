@@ -431,9 +431,9 @@ def test_top_3_findings_md_case_study_questions_compliance(tmp_path: Path) -> No
     assert op_content == top_content
 
     # Header hierarchy assertions
-    assert op_content.startswith("# Executive Operational Report: Top 3 Critical Findings")
-    assert "## Summary Matrix" in op_content
-    assert "## Detailed Operational Analysis & Action Framework" in op_content
+    assert op_content.startswith("# Operasyonel Yönetici Raporu: En Kritik 3 Bulgu")
+    assert "### Özet Matrisi" in op_content
+    assert "## Detaylı Operasyonel Analiz ve Aksiyon Çerçevesi" in op_content
 
     # Max 3 findings constraint check
     finding_headers = [
@@ -461,11 +461,11 @@ def test_top_3_findings_md_case_study_questions_compliance(tmp_path: Path) -> No
     # Case Study Question 2 assertions
     q2_text = "Soru 2: Bütçe, teklif veya kreatif tarafında hangi aksiyonu alırdınız?"
     assert q2_text in op_content
-    assert "Bütçe Aksiyonu (`BUDGET`):" in op_content
-    assert "Teklif Aksiyonu (`BID`):" in op_content
-    assert "Kreatif Aksiyonu (`CREATIVE`):" in op_content
-    assert "Takip Aksiyonu (`TRACKING`):" in op_content
-    assert "Aksiyon Gerekçesi (Rationale):" in op_content
+    assert "Bütçe Aksiyonu" in op_content
+    assert "Teklif Aksiyonu" in op_content
+    assert "Kreatif Aksiyonu" in op_content
+    assert "Takip Aksiyonu" in op_content
+    assert "Aksiyon Gerekçesi" in op_content
     assert "Somut Operasyonel Adımlar:" in op_content
     assert "1. Inspect GTM container trigger" in op_content
     assert "2. Verify CAPI server endpoint" in op_content
@@ -486,13 +486,13 @@ def test_sample_briefing_md_structure(tmp_path: Path) -> None:
 
     content = briefing_path.read_text(encoding="utf-8")
 
-    assert "# Executive Briefing: Daily Marketing & Data Intelligence" in content
-    assert "🟡 DEGRADED" in content
-    assert "Target Analysis Date:" in content
+    assert "# Yönetici Brifingi: Günlük Pazarlama ve Veri İstihbaratı" in content
+    assert "🟡 DÜŞÜK PERFORMANS" in content
+    assert "Hedef Analiz Tarihi" in content
     assert "2026-09-07" in content
-    assert "## Executive Summary Narrative" in content
+    assert "## Yönetici Özet Narratifi" in content
     assert result.executive_summary in content
-    assert "## Portfolio Impact Snapshot" in content
-    assert "| Campaign | Platform | Country | Issue Classification | Confidence |" in content
+    assert "## Portföy Etki Özeti" in content
+    assert "| Kampanya | Platform | Ülke | Teşhis Sınıfı | Güven |" in content
     assert "US_Google_Search_Brand" in content
     assert "EU_Meta_Prospecting_Video" in content

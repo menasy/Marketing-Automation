@@ -25,10 +25,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY src/ /app/src/
 COPY prompts/ /app/prompts/
 COPY data/ /app/data/
-RUN mkdir -p /app/output && chown -R appuser:appuser /app
+COPY entrypoint-api.sh /app/entrypoint-api.sh
+RUN mkdir -p /app/output && chmod 777 /app/output && \
+    chmod +x /app/entrypoint-api.sh && \
+    chown -R appuser:appuser /app
 
-# Switch to non-root user
-USER appuser
+# Entrypoint runs as root to fix bind-mount permissions, then execs uvicorn
 
 # Expose FastAPI application port
 EXPOSE 8000
@@ -37,5 +39,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Command to execute FastAPI server via Uvicorn
-CMD ["uvicorn", "src.presentation.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to execute FastAPI server via entrypoint (handles output dir permissions)
+CMD ["/app/entrypoint-api.sh"]

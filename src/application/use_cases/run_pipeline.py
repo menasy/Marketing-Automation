@@ -43,6 +43,10 @@ from src.infrastructure.data.normalization.meta_normalizer import (
 )
 from src.infrastructure.notifications.slack import SlackNotificationService
 from src.infrastructure.reporting.artifact_service import ArtifactService
+from src.infrastructure.reporting.localization import (
+    localize_action_label,
+    localize_issue_type,
+)
 from src.infrastructure.reporting.operational_report import OperationalReportWriter
 
 logger = logging.getLogger(__name__)
@@ -460,17 +464,20 @@ class RunPipelineUseCase:
         if batch_result is not None:
             briefing_summary = batch_result.executive_summary
             for finding in batch_result.findings:
+                issue_label = localize_issue_type(finding.issue_type)
+                clean_issue = issue_label.strip("[]")
+                operational_action = (
+                    finding.action_plan.concrete_steps[0]
+                    if finding.action_plan.concrete_steps
+                    else finding.action_plan.rationale
+                )
                 finding_dict = {
                     "campaign_name": finding.campaign_name,
                     "platform": finding.platform,
                     "country": finding.country,
                     "metric_change": finding.metric_change_summary,
-                    "issue_type": finding.issue_type,
-                    "operational_action": (
-                        finding.action_plan.concrete_steps[0]
-                        if finding.action_plan.concrete_steps
-                        else finding.action_plan.rationale
-                    ),
+                    "issue_type": clean_issue,
+                    "operational_action": operational_action,
                     "severity": (
                         "CRITICAL"
                         if finding.confidence_score >= 0.8
@@ -485,9 +492,11 @@ class RunPipelineUseCase:
                     f"- *{finding.campaign_name}* ({plat}/{finding.country}): "
                     f"{finding.metric_change_summary}"
                 )
+                budget_label = localize_action_label(finding.action_plan.budget_action)
+                creative_label = localize_action_label(finding.action_plan.creative_action)
                 act_str = (
-                    f"{finding.campaign_name}: {finding.action_plan.budget_action} | "
-                    f"{finding.action_plan.creative_action}"
+                    f"{finding.campaign_name}: {budget_label} | "
+                    f"{creative_label}"
                 )
                 recommended_actions.append(act_str)
 

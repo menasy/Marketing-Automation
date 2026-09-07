@@ -16,7 +16,7 @@ fi
 echo "Importing workflow from $WORKFLOW_FILE..."
 n8n import:workflow --input="$WORKFLOW_FILE"
 
-echo "Publishing and activating workflow: marketing-briefing-workflow..."
-n8n publish:workflow --id=marketing-briefing-workflow || true
+echo "Activating imported workflows..."
+n8n update:workflow --all --active=true || true
 
 echo "Zero-touch n8n workflow setup successfully completed."

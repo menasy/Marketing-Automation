@@ -30,16 +30,18 @@ services:
       - GENERIC_TIMEZONE=Europe/Istanbul
       - TZ=Europe/Istanbul
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - N8N_BASIC_AUTH_ACTIVE=false
       - N8N_USER_MANAGEMENT_DISABLED=true
+      - N8N_ADMIN_EMAIL=${N8N_ADMIN_EMAIL:-}
+      - N8N_ADMIN_PASSWORD=${N8N_ADMIN_PASSWORD:-}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - n8n_data:/home/node/.n8n
       - ./automation:/automation:ro
       - ./output:/output:ro
-    entrypoint: /bin/sh
-    command: -c "n8n import:workflow --input=/automation/workflow.json && n8n publish:workflow --id=marketing-briefing-workflow && n8n start"
+    entrypoint: ["/bin/sh", "/automation/entrypoint-n8n.sh"]
     depends_on:
       api:
         condition: service_healthy

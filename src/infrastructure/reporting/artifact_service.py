@@ -6,6 +6,7 @@ from pathlib import Path
 from src.agent.schemas.reasoning import BatchAnalysisResult
 from src.domain.models.evidence_dossier import EvidenceDossier
 from src.infrastructure.reporting.briefing_writer import ExecutiveBriefingWriter
+from src.infrastructure.reporting.io_utils import safe_write_text
 from src.infrastructure.reporting.json_exporter import JsonAnomalyExporter
 from src.infrastructure.reporting.operational_report import TopFindingsReportWriter
 
@@ -63,7 +64,7 @@ class ArtifactService:
         rendered_report = self._top_findings_writer.render_and_save(
             result, operational_assessment_path
         )
-        top_findings_path.write_text(rendered_report, encoding="utf-8")
+        safe_write_text(top_findings_path, rendered_report, encoding="utf-8")
 
         # 4. Deliverable 4: sample_briefing.md
         self._briefing_writer.render_and_save(result, briefing_path, dossier=dossier)

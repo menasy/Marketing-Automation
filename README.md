@@ -106,7 +106,7 @@ Kod tabanı **Temiz Mimari (Clean Architecture)** ilkelerini ve **SOLID** tasar�
 ## 4. Project Structure (Proje Yapısı)
 
 ```text
-marketing-automation/
+Marketing-Automation/
 ├── .env.example                 # Çevre değişkenleri şablonu
 ├── .gitignore                   # Git dışlama kuralları
 ├── docker-compose.yml           # Çoklu konteyner orkestrasyonu (FastAPI + n8n)
@@ -302,7 +302,7 @@ Canlı Google Ads ve Meta Ads API entegrasyonu aşamasında sistem şu mimari pr
 ### Ortam Kurulumu (Environment Setup)
 ```bash
 # Depoyu klonlayın ve kök dizine geçin
-cd marketing-automation
+cd Marketing-Automation
 
 # Sanal ortam oluşturun
 python3 -m venv .venv
@@ -326,7 +326,7 @@ python -m src.cli.main --target-date 2026-08-31 --data-dir data --output-dir out
 ### REST API İle Çalıştırma
 FastAPI uygulama sunucusunu başlatın:
 ```bash
-uvicorn src.presentation.api.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn src.presentation.api.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 Swagger UI dokümantasyonuna `http://localhost:8000/docs` adresinden erişebilirsiniz.
 
@@ -355,8 +355,11 @@ Docker Compose kullanarak n8n ve FastAPI servislerini konteyner ortamında başl
 ```bash
 docker compose up -d
 ```
-- n8n arayüzüne `http://localhost:5678` adresinden ulaşabilirsiniz (Varsayılan giriş: `admin` / `admin123456`).
-- `automation/workflow.json` iş akışı konteyner ayağa kalktığında otomatik olarak yüklenir.
+- n8n arayüzüne `http://localhost:5678` adresinden ulaşabilirsiniz.
+- Konteyner ilk ayağa kalktığında `automation/entrypoint-n8n.sh` betiği:
+  - `automation/workflow.json` iş akışını veritabanına aktarır ve aktif konuma getirir.
+  - `.env` dosyasındaki `N8N_ADMIN_EMAIL` ve `N8N_ADMIN_PASSWORD` ortam değişkenlerini kullanarak yönetici hesabını (`admin@marketing.local` / `AdminPassword2026!`) otomatik oluşturur.
+- Kullanıcı web arayüzüne girdiğinde herhangi bir ilk kurulum formuyla karşılaşmadan direkt oturum açabilir.
 
 ---
 

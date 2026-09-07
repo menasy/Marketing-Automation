@@ -1,6 +1,7 @@
 """Unit tests for Dockerfile, docker-compose.yml, and n8n workflow.json configuration contracts."""
 
 import json
+import os
 from pathlib import Path
 
 import yaml
@@ -83,9 +84,17 @@ class TestDockerComposeConfig:
 
         assert "healthcheck" in api
 
+    def test_n8n_entrypoint_script_exists_and_executable(self) -> None:
+        """Verify automation/entrypoint-n8n.sh exists and has executable permissions."""
+        script_path = REPO_ROOT / "automation" / "entrypoint-n8n.sh"
+        assert script_path.is_file(), "automation/entrypoint-n8n.sh must exist"
+        assert os.access(script_path, os.X_OK), "automation/entrypoint-n8n.sh must be executable"
+
     def test_docker_compose_n8n_service_configuration(self) -> None:
-        """Verify n8n service configuration, zero-touch auto-import command, and dependencies."""
+        """Verify n8n service, zero-touch entrypoint, credentials, and dependencies."""
         compose_path = REPO_ROOT / "docker-compose.yml"
+        compose_content = compose_path.read_text(encoding="utf-8")
+
         with compose_path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
@@ -99,11 +108,23 @@ class TestDockerComposeConfig:
         env_list = n8n.get("environment", [])
         env_str = str(env_list)
         assert "GENERIC_TIMEZONE=Europe/Istanbul" in env_str or "TZ=Europe/Istanbul" in env_str
+        assert "N8N_BLOCK_ENV_ACCESS_IN_NODE=false" in env_str
+        assert "N8N_ADMIN_EMAIL=${N8N_ADMIN_EMAIL:-}" in env_str or "N8N_ADMIN_EMAIL" in env_str
+        assert (
+            "N8N_ADMIN_PASSWORD=${N8N_ADMIN_PASSWORD:-}" in env_str
+            or "N8N_ADMIN_PASSWORD" in env_str
+        )
 
-        # Check zero-touch import command
-        cmd_str = str(n8n.get("command", ""))
-        assert "import:workflow" in cmd_str
-        assert "/automation/workflow.json" in cmd_str
+        # Check zero-touch entrypoint configuration
+        entrypoint = n8n.get("entrypoint")
+        entrypoint_str = str(entrypoint)
+        assert "/automation/entrypoint-n8n.sh" in entrypoint_str
+
+        # Assert fragile publish:workflow command is completely removed
+        assert "publish:workflow" not in compose_content, (
+            "docker-compose.yml must not contain deprecated publish:workflow command"
+        )
+        assert "command" not in n8n, "docker-compose.yml n8n service must rely on entrypoint script"
 
         # Check dependency on API healthcheck
         depends_on = n8n.get("depends_on", {})

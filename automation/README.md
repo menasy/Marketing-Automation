@@ -122,33 +122,45 @@ n8n iş akışı (`automation/workflow.json`) birbirine bağlı 8 temel düğüm
 
 ---
 
-## 🐳 Otomatik Yükleme ve Konteyner Yayılımı (Zero-Touch Auto-Import)
+## 🐳 Otomatik Yükleme ve Yönetici Hesabı Enjeksiyonu (Zero-Touch Auto-Import & Owner Setup)
 
 `docker-compose.yml`, manuel arayüz yapılandırmasına ihtiyaç duymadan hem FastAPI arka plan servisini hem de n8n otomasyon motorunu otomatik olarak yayına alır.
 
-### Otomatik Yükleme Mekanizması (Zero-Touch Auto-Import)
+### Otomatik Yükleme Mekanizması (`entrypoint-n8n.sh`)
 
-Konteyner ayağa kalkarken n8n, `docker-compose.yml` içerisinde tanımlı CLI yükleme komutunu çalıştırır:
+Konteyner ayağa kalkarken n8n, `/automation/entrypoint-n8n.sh` betiği üzerinden çalışır:
+1. `workflow.json` dosyasını `n8n import:workflow` ve `n8n update:workflow --all --active=true` ile yükler ve aktif hale getirir.
+2. n8n sunucusunu başlatır ve `/healthz` uç noktası 200 OK verene kadar bekler.
+3. `/rest/owner/setup` uç noktasına POST isteği atarak varsayılan yönetici hesabını (`admin@marketing.local` / `AdminPassword2026!`) otomatik enjekte eder.
+
 ```yaml
 n8n:
-  image: n8nio/n8n:latest
+  image: docker.n8n.io/n8nio/n8n:latest
   container_name: marketing_automation_n8n
-  command: /bin/sh -c "n8n import:workflow --input=/automation/workflow.json && n8n start"
+  entrypoint: ["/bin/sh", "/automation/entrypoint-n8n.sh"]
   environment:
     - GENERIC_TIMEZONE=Europe/Istanbul
+    - N8N_ADMIN_EMAIL=admin@marketing.local
+    - N8N_ADMIN_PASSWORD=AdminPassword2026!
     - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
     - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
   volumes:
+    - n8n_data:/home/node/.n8n
     - ./automation:/automation:ro
   depends_on:
     api:
       condition: service_healthy
 ```
 
+### Otomatik Giriş Bilgileri (Default Admin Credentials)
+- **URL:** `http://localhost:5678`
+- **E-Posta:** `admin@marketing.local`
+- **Şifre:** `AdminPassword2026!`
+
 ### Manuel Yükleme Adımları (n8n UI Fallback)
 
 n8n web arayüzü (`http://localhost:5678`) üzerinden değerlendirme yapılıyorsa:
-1. Tarayıcıda `http://localhost:5678` adresini açın.
+1. Tarayıcıda `http://localhost:5678` adresini açın ve varsayılan yönetici bilgileriyle giriş yapın.
 2. **Workflows** -> **Import from File** adımlarını takip edin.
 3. Proje dizinindeki `automation/workflow.json` dosyasını seçin.
 4. Tüm 8 düğümün yüklendiğini doğrulayın ve **Activate** butonuna basın.
@@ -161,10 +173,14 @@ Tüm gizli anahtarlar ve çevre değişkenleri katı biçimde izole edilmiştir.
 
 | Çevre Değişkeni | Açıklama | Örnek / Konum |
 |---|---|---|
+| `N8N_ADMIN_EMAIL` | Otomatik enjekte edilen varsayılan yönetici e-posta adresi | `admin@marketing.local` |
+| `N8N_ADMIN_PASSWORD` | Otomatik enjekte edilen varsayılan yönetici şifresi | `AdminPassword2026!` |
 | `SLACK_WEBHOOK_URL` | Slack uyarıları ve özetleri için Gelen Webhook URL adresi | `.env` dosyasından aktarılır |
 | `GEMINI_API_KEY` | Gemini Pro / Flash LLM API kimlik doğrulama anahtarı | `.env` dosyasından aktarılır |
 | `GENERIC_TIMEZONE` | n8n cron zamanlayıcısı için zaman dilimi ayarı | `Europe/Istanbul` |
 | `N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS` | Güvenlik için dosya yetki denetimlerini zorunlu kılar | `true` |
+| `N8N_BLOCK_ENV_ACCESS_IN_NODE` | Düğüm ifadelerinden $env erişimine izin verir | `false` |
+
 
 ---
 

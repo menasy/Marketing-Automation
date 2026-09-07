@@ -6,21 +6,18 @@ from pathlib import Path
 from src.agent.schemas.reasoning import BatchAnalysisResult, DiagnosedFinding
 from src.application.ports.operational_report import IOperationalReportWriter
 from src.domain.models.operational_finding import OperationalFinding
+from src.infrastructure.reporting.io_utils import safe_write_text
+from src.infrastructure.reporting.localization import (
+    localize_action_label,
+    localize_issue_type,
+    localize_severity,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class TopFindingsReportWriter(IOperationalReportWriter):
     """Renders top operational findings into a high-impact executive Markdown report."""
-
-    _ISSUE_BADGES: dict[str, str] = {
-        "DATA_QUALITY": "[VERİ / TRACKING HATASI]",
-        "PERFORMANCE": "[GERÇEK PERFORMANS DÜŞÜŞÜ]",
-        "MIXED": "[KARMA / BELİRSİZ]",
-        "data_quality": "[VERİ / TRACKING HATASI]",
-        "performance": "[GERÇEK PERFORMANS DÜŞÜŞÜ]",
-        "mixed": "[KARMA / BELİRSİZ]",
-    }
 
     def render_and_save(
         self,
@@ -37,9 +34,7 @@ class TopFindingsReportWriter(IOperationalReportWriter):
             The rendered Markdown string content.
         """
         content = self.render(findings)
-        target_path = Path(output_path)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(content, encoding="utf-8")
+        target_path = safe_write_text(output_path, content, encoding="utf-8")
 
         logger.info("Top 3 findings report successfully written to %s", target_path)
         return content
@@ -59,23 +54,23 @@ class TopFindingsReportWriter(IOperationalReportWriter):
 
         if not finding_items:
             return (
-                "# Executive Operational Report: Top 3 Critical Findings\n\n"
-                "## Summary\n"
-                "No critical operational anomalies or data quality issues detected.\n"
+                "# Operasyonel Yönetici Raporu: En Kritik 3 Bulgu\n\n"
+                "## Özet\n"
+                "Herhangi bir kritik operasyonel anomali veya veri kalitesi sorunu "
+                "tespit edilmedi.\n"
             )
 
         lines: list[str] = []
-        lines.append("# Executive Operational Report: Top 3 Critical Findings\n")
+        lines.append("# Operasyonel Yönetici Raporu: En Kritik 3 Bulgu\n")
         lines.append(
-            "**Executive Overview:** Systematic operational diagnosis evaluating multi-metric "
-            "anomalies, isolating root causes, and defining evidence-based action steps.\n"
+            "**Yönetici Özeti:** Çoklu metrik anomalilerin sistematik operasyonel teşhisi, "
+            "kök neden izolasyonu ve kanıta dayalı aksiyon adımları.\n"
         )
 
         # Overview Summary Table
-        lines.append("### Summary Matrix\n")
+        lines.append("### Özet Matrisi\n")
         table_hdr = (
-            "| Campaign | Platform | Country | Issue Classification | Confidence "
-            "| Primary Metric Delta |"
+            "| Kampanya | Platform | Ülke | Teşhis Sınıfı | Güven | Birincil Metrik Değişimi |"
         )
         lines.append(table_hdr)
         lines.append("|---|---|---|---|---|---|")
@@ -84,7 +79,7 @@ class TopFindingsReportWriter(IOperationalReportWriter):
             if isinstance(f, DiagnosedFinding):
                 plat = f.platform.upper()
                 country = f.country.upper()
-                issue_badge = self._ISSUE_BADGES.get(f.issue_type, f"[{f.issue_type}]")
+                issue_badge = localize_issue_type(f.issue_type)
                 conf_str = f"{f.confidence_score * 100:.0f}%"
                 delta_str = f.metric_change_summary
             else:
@@ -97,8 +92,8 @@ class TopFindingsReportWriter(IOperationalReportWriter):
                 issue_val = (
                     f.issue_type.value if hasattr(f.issue_type, "value") else str(f.issue_type)
                 )
-                issue_badge = self._ISSUE_BADGES.get(issue_val, f"[{issue_val.upper()}]")
-                conf_str = f"Score: {f.score:.1f}"
+                issue_badge = localize_issue_type(issue_val)
+                conf_str = f"Skor: {f.score:.1f}"
                 delta_str = f.metric_change
 
             lines.append(
@@ -108,7 +103,7 @@ class TopFindingsReportWriter(IOperationalReportWriter):
         lines.append("\n---\n")
 
         # Detailed Findings Section (Addressing Case Study Questions 1 & 2 explicitly)
-        lines.append("## Detailed Operational Analysis & Action Framework\n")
+        lines.append("## Detaylı Operasyonel Analiz ve Aksiyon Çerçevesi\n")
 
         for idx, f in enumerate(finding_items, start=1):
             if isinstance(f, DiagnosedFinding):
@@ -122,12 +117,12 @@ class TopFindingsReportWriter(IOperationalReportWriter):
         """Render a single DiagnosedFinding fulfilling Question 1 and Question 2."""
         plat = f.platform.upper()
         country = f.country.upper()
-        issue_badge = self._ISSUE_BADGES.get(f.issue_type, f"[{f.issue_type}]")
+        issue_badge = localize_issue_type(f.issue_type)
         conf_pct = f"{f.confidence_score * 100:.0f}%"
 
         lines.append(f"## Bulgu {idx}: {f.campaign_name} ({plat} - {country})")
         lines.append(
-            f"**Platform:** `{plat}` | **Country:** `{country}` | "
+            f"**Platform:** `{plat}` | **Ülke:** `{country}` | "
             f"**Teşhis Sınıfı:** **{issue_badge}** | **Güven Skoru:** `{conf_pct}`\n"
         )
 
@@ -155,14 +150,20 @@ class TopFindingsReportWriter(IOperationalReportWriter):
         # Question 2: Operational Action Plan
         lines.append("#### Soru 2: Bütçe, teklif veya kreatif tarafında hangi aksiyonu alırdınız?")
         plan = f.action_plan
+
+        budget_label = localize_action_label(plan.budget_action)
+        bid_label = localize_action_label(plan.bid_action)
+        creative_label = localize_action_label(plan.creative_action)
+        tracking_label = localize_action_label(plan.tracking_action)
+
         lines.append(
             "**Operasyonel Aksiyon Planı:**\n"
-            f"- **Bütçe Aksiyonu (`BUDGET`):** `{plan.budget_action}`\n"
-            f"- **Teklif Aksiyonu (`BID`):** `{plan.bid_action}`\n"
-            f"- **Kreatif Aksiyonu (`CREATIVE`):** `{plan.creative_action}`\n"
-            f"- **Takip Aksiyonu (`TRACKING`):** `{plan.tracking_action}`\n"
+            f"- **Bütçe Aksiyonu:** `{budget_label}`\n"
+            f"- **Teklif Aksiyonu:** `{bid_label}`\n"
+            f"- **Kreatif Aksiyonu:** `{creative_label}`\n"
+            f"- **Takip Aksiyonu:** `{tracking_label}`\n"
         )
-        lines.append(f"**Aksiyon Gerekçesi (Rationale):**\n{plan.rationale}\n")
+        lines.append(f"**Aksiyon Gerekçesi:**\n{plan.rationale}\n")
 
         if plan.concrete_steps:
             lines.append("**Somut Operasyonel Adımlar:**")
@@ -170,8 +171,9 @@ class TopFindingsReportWriter(IOperationalReportWriter):
                 lines.append(f"{step_idx}. {step}")
             lines.append("")
 
+        risk_label = localize_severity(plan.risk_level)
         lines.append(
-            f"**Beklenen Etki:** {plan.expected_effect} | **Risk Seviyesi:** `{plan.risk_level}`\n"
+            f"**Beklenen Etki:** {plan.expected_effect} | **Risk Seviyesi:** `{risk_label}`\n"
         )
         lines.append("---\n")
 
@@ -180,15 +182,16 @@ class TopFindingsReportWriter(IOperationalReportWriter):
         plat = f.platform.value.upper() if hasattr(f.platform, "value") else str(f.platform).upper()
         country = f.country.upper()
         issue_val = f.issue_type.value if hasattr(f.issue_type, "value") else str(f.issue_type)
-        issue_badge = self._ISSUE_BADGES.get(issue_val, f"[{issue_val.upper()}]")
-        sev_str = (
+        issue_badge = localize_issue_type(issue_val)
+        sev_raw = (
             f.severity.value.upper() if hasattr(f.severity, "value") else str(f.severity).upper()
         )
+        sev_label = localize_severity(sev_raw)
 
         lines.append(f"## Bulgu {idx}: {f.campaign_name} ({plat} - {country})")
         lines.append(
-            f"**Severity:** `{sev_str}` | **Teşhis Sınıfı:** **{issue_badge}** | "
-            f"**Score:** `{f.score:.1f}`\n"
+            f"**Önem Derecesi:** `{sev_label}` | **Teşhis Sınıfı:** **{issue_badge}** | "
+            f"**Skor:** `{f.score:.1f}`\n"
         )
         lines.append(f"**Kanıt Özeti:** {f.evidence_summary}\n")
 
@@ -201,12 +204,18 @@ class TopFindingsReportWriter(IOperationalReportWriter):
 
         # Question 2
         lines.append("#### Soru 2: Bütçe, teklif veya kreatif tarafında hangi aksiyonu alırdınız?")
+
+        budget_label = localize_action_label(f.budget_action) if f.budget_action else "—"
+        bid_label = localize_action_label(f.bid_action) if f.bid_action else "—"
+        creative_label = localize_action_label(f.creative_action) if f.creative_action else "—"
+        tracking_label = localize_action_label(f.tracking_action) if f.tracking_action else "—"
+
         lines.append(
             "**Operasyonel Aksiyon Planı:**\n"
-            f"- **Bütçe Aksiyonu (`BUDGET`):** `{f.budget_action}`\n"
-            f"- **Teklif Aksiyonu (`BID`):** `{f.bid_action}`\n"
-            f"- **Kreatif Aksiyonu (`CREATIVE`):** `{f.creative_action}`\n"
-            f"- **Takip Aksiyonu (`TRACKING`):** `{f.tracking_action}`\n"
+            f"- **Bütçe Aksiyonu:** `{budget_label}`\n"
+            f"- **Teklif Aksiyonu:** `{bid_label}`\n"
+            f"- **Kreatif Aksiyonu:** `{creative_label}`\n"
+            f"- **Takip Aksiyonu:** `{tracking_label}`\n"
         )
         if f.operational_action:
             lines.append(f"**Genel Aksiyon:** {f.operational_action}\n")
@@ -215,22 +224,17 @@ class TopFindingsReportWriter(IOperationalReportWriter):
     @staticmethod
     def to_finding_dict(finding: OperationalFinding | DiagnosedFinding) -> dict[str, str]:
         """Serialize a finding into dictionary format for PipelineResult.top_3_findings."""
-        issue_labels: dict[str, str] = {
-            "DATA_QUALITY": "VERİ / TRACKING HATASI",
-            "PERFORMANCE": "GERÇEK PERFORMANS SORUNU",
-            "MIXED": "KARMA / BELİRSİZ",
-            "data_quality": "VERİ / TRACKING HATASI",
-            "performance": "GERÇEK PERFORMANS SORUNU",
-            "mixed": "KARMA / BELİRSİZ",
-        }
-
         if isinstance(finding, DiagnosedFinding):
+            issue_label = localize_issue_type(finding.issue_type)
+            # Strip brackets from issue label for dict value
+            clean_issue = issue_label.strip("[]")
+
             return {
                 "campaign_name": finding.campaign_name,
                 "platform": finding.platform.upper(),
                 "country": finding.country.upper(),
                 "metric_change": finding.metric_change_summary,
-                "issue_type": issue_labels.get(finding.issue_type, finding.issue_type.upper()),
+                "issue_type": clean_issue,
                 "operational_action": finding.action_plan.rationale,
                 "severity": "HIGH",
                 "score": str(round(finding.confidence_score * 100, 1)),
@@ -249,12 +253,16 @@ class TopFindingsReportWriter(IOperationalReportWriter):
         platform_val = (
             finding.platform.value if hasattr(finding.platform, "value") else str(finding.platform)
         )
+
+        issue_label = localize_issue_type(issue_type_val)
+        clean_issue = issue_label.strip("[]")
+
         return {
             "campaign_name": finding.campaign_name,
             "platform": platform_val,
             "country": finding.country,
             "metric_change": finding.metric_change,
-            "issue_type": issue_labels.get(issue_type_val, issue_type_val.upper()),
+            "issue_type": clean_issue,
             "operational_action": finding.operational_action,
             "severity": severity_val,
             "score": str(round(finding.score, 1)),

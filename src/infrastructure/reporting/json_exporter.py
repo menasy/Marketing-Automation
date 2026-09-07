@@ -9,6 +9,7 @@ from src.domain.models.evidence_dossier import (
     EvidenceDossier,
     MetricEvidence,
 )
+from src.infrastructure.reporting.io_utils import safe_write_text
 
 
 def _sanitize_float(val: float | None) -> float | None:
@@ -109,9 +110,7 @@ class JsonAnomalyExporter:
             The written JSON string content.
         """
         content = self.render(dossier)
-        target_path = Path(output_path)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(content, encoding="utf-8")
+        safe_write_text(output_path, content, encoding="utf-8")
         return content
 
 

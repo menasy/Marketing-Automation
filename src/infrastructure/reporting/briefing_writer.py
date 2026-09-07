@@ -5,24 +5,17 @@ from pathlib import Path
 
 from src.agent.schemas.reasoning import BatchAnalysisResult
 from src.domain.models.evidence_dossier import EvidenceDossier
+from src.infrastructure.reporting.io_utils import safe_write_text
+from src.infrastructure.reporting.localization import (
+    localize_health_status,
+    localize_issue_type,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ExecutiveBriefingWriter:
     """Renders a concise, C-Level morning executive briefing in Markdown format."""
-
-    _HEALTH_BADGES: dict[str, str] = {
-        "HEALTHY": "🟢 HEALTHY",
-        "DEGRADED": "🟡 DEGRADED",
-        "CRITICAL": "🔴 CRITICAL",
-    }
-
-    _ISSUE_BADGES: dict[str, str] = {
-        "DATA_QUALITY": "[VERİ / TRACKING HATASI]",
-        "PERFORMANCE": "[GERÇEK PERFORMANS DÜŞÜŞÜ]",
-        "MIXED": "[KARMA / BELİRSİZ]",
-    }
 
     def render(
         self,
@@ -39,42 +32,43 @@ class ExecutiveBriefingWriter:
             Rendered Markdown content string.
         """
         health_raw = result.overall_data_health.upper()
-        health_badge = self._HEALTH_BADGES.get(health_raw, f"[{health_raw}]")
+        health_badge = localize_health_status(health_raw)
 
         target_date = dossier.target_date if dossier is not None else result.analysis_timestamp
 
         lines: list[str] = []
-        lines.append("# Executive Briefing: Daily Marketing & Data Intelligence")
+        lines.append("# Yönetici Brifingi: Günlük Pazarlama ve Veri İstihbaratı")
         lines.append("")
         lines.append(
-            f"**Target Analysis Date:** `{target_date}` | "
-            f"**Data Health Status:** **{health_badge}** | "
-            f"**Execution Timestamp:** `{result.analysis_timestamp}`"
+            f"**Hedef Analiz Tarihi:** `{target_date}` | "
+            f"**Veri Sağlığı Durumu:** **{health_badge}** | "
+            f"**Çalıştırma Zamanı:** `{result.analysis_timestamp}`"
         )
         lines.append("")
         lines.append("---")
         lines.append("")
-        lines.append("## Executive Summary Narrative")
+        lines.append("## Yönetici Özet Narratifi")
         lines.append("")
         lines.append(result.executive_summary)
         lines.append("")
         lines.append("---")
         lines.append("")
-        lines.append("## Portfolio Impact Snapshot")
+        lines.append("## Portföy Etki Özeti")
         lines.append("")
 
         if not result.findings:
-            lines.append("No critical campaign anomalies or findings diagnosed in this batch run.")
+            lines.append(
+                "Bu analiz döneminde kritik kampanya anomalisi veya bulgu teşhis edilmedi."
+            )
         else:
             table_header = (
-                "| Campaign | Platform | Country | Issue Classification | Confidence "
-                "| Primary Rationale / Root Cause |"
+                "| Kampanya | Platform | Ülke | Teşhis Sınıfı | Güven "
+                "| Birincil Gerekçe / Kök Neden |"
             )
             lines.append(table_header)
             lines.append("|---|---|---|---|---|---|")
             for finding in result.findings:
-                issue_raw = finding.issue_type.upper()
-                issue_badge = self._ISSUE_BADGES.get(issue_raw, f"[{issue_raw}]")
+                issue_badge = localize_issue_type(finding.issue_type)
                 plat = finding.platform.upper()
                 country = finding.country.upper()
                 conf_pct = f"{finding.confidence_score * 100:.0f}%"
@@ -109,9 +103,7 @@ class ExecutiveBriefingWriter:
             Written Markdown string content.
         """
         content = self.render(result, dossier=dossier)
-        target_path = Path(output_path)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(content, encoding="utf-8")
+        target_path = safe_write_text(output_path, content, encoding="utf-8")
 
         logger.info("Executive briefing successfully written to %s", target_path)
         return content

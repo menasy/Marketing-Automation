@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     google_ads_client_id: str = Field(default="")
     google_ads_client_secret: str = Field(default="")
 
+    # n8n Automation Credentials
+    n8n_admin_email: str = Field(
+        default="admin@marketing.local", validation_alias="N8N_ADMIN_EMAIL"
+    )
+    n8n_admin_password: str = Field(default="", validation_alias="N8N_ADMIN_PASSWORD")
+
     @property
     def base_dir(self) -> Path:
         """Calculates project root directory based on file location."""

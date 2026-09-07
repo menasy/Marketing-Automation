@@ -9,6 +9,11 @@ from src.application.ports.notification import INotificationService
 from src.domain.models.briefing import ExecutiveBriefing
 from src.domain.models.evidence_dossier import EvidenceDossier
 from src.infrastructure.config.settings import get_settings
+from src.infrastructure.reporting.localization import (
+    localize_action_label,
+    localize_issue_type,
+    localize_severity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,19 +85,19 @@ class SlackNotificationService(INotificationService):
             dossier: Optional statistical EvidenceDossier entity.
 
         Returns:
-            Structured Block Kit payload dictionary with zero static strings.
+            Structured Block Kit payload dictionary with zero raw enum strings.
         """
         health_status = (result.overall_data_health or "HEALTHY").upper()
         health_badge = _HEALTH_EMOJI.get(health_status, "🟡")
 
-        target_date = dossier.target_date if dossier and dossier.target_date else "Today"
+        target_date = dossier.target_date if dossier and dossier.target_date else "Bugün"
 
         blocks: list[dict[str, object]] = [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"🚨 Marketing Anomaly Briefing | {target_date} {health_badge}",
+                    "text": f"📢 Günlük Reklam Operasyon Brifingi | {target_date} {health_badge}",
                     "emoji": True,
                 },
             },
@@ -100,7 +105,7 @@ class SlackNotificationService(INotificationService):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Executive Summary:*\n{result.executive_summary}",
+                    "text": f"*Yönetici Özeti:*\n{result.executive_summary}",
                 },
             },
             {"type": "divider"},
@@ -108,11 +113,7 @@ class SlackNotificationService(INotificationService):
 
         # Dynamic Top Findings Blocks (up to 3 findings)
         for idx, finding in enumerate(result.findings[:3], start=1):
-            issue_raw = finding.issue_type.upper()
-            if "DATA" in issue_raw or "TRACKING" in issue_raw or "VERİ" in issue_raw:
-                issue_badge = "[VERİ / TRACKING HATASI]"
-            else:
-                issue_badge = "[GERÇEK PERFORMANS DÜŞÜŞÜ]"
+            issue_badge = localize_issue_type(finding.issue_type)
 
             confidence_pct = round(finding.confidence_score * 100)
 
@@ -124,14 +125,19 @@ class SlackNotificationService(INotificationService):
 
             root_cause_text = f"*Kök Neden Analizi:*\n{finding.root_cause_analysis}"
 
-            # Operational action vector breakdown
+            # Operational action vector breakdown — localized
             action_plan = finding.action_plan
+            budget_label = localize_action_label(action_plan.budget_action)
+            bid_label = localize_action_label(action_plan.bid_action)
+            creative_label = localize_action_label(action_plan.creative_action)
+            tracking_label = localize_action_label(action_plan.tracking_action)
+
             action_vector_text = (
                 f"*Operasyonel Aksiyonlar:*\n"
-                f"• *Bütçe:* `{action_plan.budget_action}`\n"
-                f"• *Teklif:* `{action_plan.bid_action}`\n"
-                f"• *Kreatif:* `{action_plan.creative_action}`\n"
-                f"• *Takip:* `{action_plan.tracking_action}`"
+                f"• *Bütçe:* `{budget_label}`\n"
+                f"• *Teklif:* `{bid_label}`\n"
+                f"• *Kreatif:* `{creative_label}`\n"
+                f"• *Takip:* `{tracking_label}`"
             )
 
             concrete_steps_text = ""
@@ -143,11 +149,16 @@ class SlackNotificationService(INotificationService):
                 )
                 concrete_steps_text = f"\n*Somut Adımlar:*\n{steps_formatted}"
 
+            primary_action = localize_action_label(action_plan.tracking_action)
+            if action_plan.tracking_action.upper() in ("NO_CHANGE", "NO_ACTION"):
+                primary_action = localize_action_label(action_plan.budget_action)
+
             finding_body = (
                 f"{finding_header}\n\n"
                 f"{root_cause_text}\n\n"
                 f"{action_vector_text}"
-                f"{concrete_steps_text}"
+                f"{concrete_steps_text}\n\n"
+                f"🛠️ *Öncelikli Aksiyon:* {primary_action}"
             )
 
             blocks.append(
@@ -180,7 +191,7 @@ class SlackNotificationService(INotificationService):
         footer_text = (
             f"🕒 *Zaman:* {timestamp_str} | "
             f"⚡ *Toplam Anomali:* {anomalies_cnt} | "
-            f"💰 *Spend at Risk:* ${spend_at_risk:,.2f}\n"
+            f"💰 *Risk Altındaki Harcama:* ${spend_at_risk:,.2f}\n"
             f"📄 *Detaylı Rapor:* `output/top_3_findings.md`"
         )
 
@@ -216,7 +227,7 @@ class SlackNotificationService(INotificationService):
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": "📊 Daily Executive Performance Briefing",
+                    "text": "📊 Günlük Yönetici Performans Brifingi",
                     "emoji": True,
                 },
             },
@@ -225,7 +236,7 @@ class SlackNotificationService(INotificationService):
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": f"*Generated At:* {timestamp_str} | *Status:* Success",
+                        "text": f"*Oluşturulma Zamanı:* {timestamp_str} | *Durum:* Başarılı",
                     }
                 ],
             },
@@ -234,7 +245,7 @@ class SlackNotificationService(INotificationService):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Executive Summary:*\n{briefing.summary}",
+                    "text": f"*Yönetici Özeti:*\n{briefing.summary}",
                 },
             },
         ]
@@ -249,7 +260,7 @@ class SlackNotificationService(INotificationService):
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*Top Anomalies & Critical Findings:*\n{findings_text}",
+                        "text": f"*Önemli Anomaliler ve Kritik Bulgular:*\n{findings_text}",
                     },
                 }
             )
@@ -261,7 +272,7 @@ class SlackNotificationService(INotificationService):
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*Recommended Actions:*\n{actions_text}",
+                        "text": f"*Önerilen Aksiyonlar:*\n{actions_text}",
                     },
                 }
             )
@@ -279,7 +290,7 @@ class SlackNotificationService(INotificationService):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*🎯 Top 3 Kritik Operasyonel Bulgular:*",
+                    "text": "*🎯 En Kritik 3 Operasyonel Bulgu:*",
                 },
             },
         ]
@@ -287,19 +298,22 @@ class SlackNotificationService(INotificationService):
         for idx, finding in enumerate(findings, start=1):
             severity = finding.get("severity", "MEDIUM")
             emoji = _SEVERITY_EMOJI.get(severity, "⚪")
-            campaign = finding.get("campaign_name", "Unknown")
+            severity_label = localize_severity(severity)
+            campaign = finding.get("campaign_name", "Bilinmiyor")
             platform = finding.get("platform", "N/A")
             country = finding.get("country", "N/A")
             metric_change = finding.get("metric_change", "N/A")
-            issue_type = finding.get("issue_type", "N/A")
-            operational_action = finding.get("operational_action", "N/A")
+            issue_type_raw = finding.get("issue_type", "N/A")
+            issue_label = localize_issue_type(issue_type_raw)
+            operational_action_raw = finding.get("operational_action", "N/A")
+            operational_action = localize_action_label(operational_action_raw)
             score = finding.get("score", "0")
 
             finding_text = (
-                f"{emoji} *Bulgu #{idx}: {campaign}*\n"
+                f"{emoji} *Bulgu #{idx}: {campaign}* | {severity_label}\n"
                 f"📌 *Platform:* {platform} | *Ülke:* {country} | *Skor:* {score}\n"
                 f"📊 *Metrik Değişimi:* {metric_change}\n"
-                f"🔍 *Teşhis:* {issue_type}\n"
+                f"🔍 *Teşhis:* {issue_label}\n"
                 f"⚡ *Aksiyon:* {operational_action}"
             )
 
@@ -330,24 +344,24 @@ class SlackNotificationService(INotificationService):
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": "🚨 CRITICAL ALERT: Pipeline Execution Failed",
+                    "text": "🚨 KRİTİK UYARI: Pipeline Çalıştırma Başarısız",
                     "emoji": True,
                 },
             },
             {
                 "type": "section",
                 "fields": [
-                    {"type": "mrkdwn", "text": f"*Execution ID:*\n{execution_id}"},
-                    {"type": "mrkdwn", "text": "*Channel:*\n#marketing-alerts-critical"},
-                    {"type": "mrkdwn", "text": f"*Failed Stage:*\n{failed_stage}"},
-                    {"type": "mrkdwn", "text": f"*Timestamp:*\n{timestamp}"},
+                    {"type": "mrkdwn", "text": f"*Çalıştırma Kimliği:*\n{execution_id}"},
+                    {"type": "mrkdwn", "text": "*Kanal:*\n#marketing-alerts-critical"},
+                    {"type": "mrkdwn", "text": f"*Başarısız Olan Aşama:*\n{failed_stage}"},
+                    {"type": "mrkdwn", "text": f"*Zaman Damgası:*\n{timestamp}"},
                 ],
             },
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Error Message:*\n```{error_message}```",
+                    "text": f"*Hata Mesajı:*\n```{error_message}```",
                 },
             },
         ]

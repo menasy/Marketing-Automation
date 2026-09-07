@@ -75,10 +75,10 @@ async def test_live_dataset_pipeline_execution(tmp_path: Path) -> None:
     assert has_dq_badge or has_perf_badge, "Report must contain valid diagnostic badges"
 
     # Action items verification
-    assert "Bütçe Aksiyonu (`BUDGET`):" in op_content
-    assert "Teklif Aksiyonu (`BID`):" in op_content
-    assert "Kreatif Aksiyonu (`CREATIVE`):" in op_content
-    assert "Takip Aksiyonu (`TRACKING`):" in op_content
+    assert "Bütçe Aksiyonu" in op_content
+    assert "Teklif Aksiyonu" in op_content
+    assert "Kreatif Aksiyonu" in op_content
+    assert "Takip Aksiyonu" in op_content
     assert "Somut Operasyonel Adımlar:" in op_content
 
     # Finding count verification (up to 3 findings)
@@ -91,8 +91,8 @@ async def test_live_dataset_pipeline_execution(tmp_path: Path) -> None:
 
     # 6. Sample Briefing Deliverable Verification
     briefing_content = sample_briefing_path.read_text(encoding="utf-8")
-    assert "# Executive Briefing:" in briefing_content
-    assert "Target Analysis Date:" in briefing_content
+    assert "# Yönetici Brifingi:" in briefing_content
+    assert "Hedef Analiz Tarihi" in briefing_content
     assert "2026-08-31" in briefing_content
 
 
