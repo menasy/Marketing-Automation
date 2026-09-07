@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # Application Settings
     environment: Literal["development", "staging", "production", "testing"] = "development"
     log_level: str = "INFO"
+    host: str = Field(default="0.0.0.0", validation_alias="HOST")
     port: int = 8000
 
     # Reporting Configuration

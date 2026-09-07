@@ -33,12 +33,18 @@ def test_dual_mode_end_to_end_pipeline_parity() -> None:
     assert cli_exit_code == 0
 
     cli_anomalies_file = Path("output/anomalies.json")
+    cli_assessment_file = Path("output/operational_assessment.md")
     cli_findings_file = Path("output/top_3_findings.md")
     cli_briefing_file = Path("output/sample_briefing.md")
 
     assert cli_anomalies_file.exists()
+    assert cli_assessment_file.exists()
     assert cli_findings_file.exists()
     assert cli_briefing_file.exists()
+
+    assert cli_assessment_file.read_text(encoding="utf-8") == cli_findings_file.read_text(
+        encoding="utf-8"
+    )
 
     cli_anomalies = json.loads(cli_anomalies_file.read_text(encoding="utf-8"))
     cli_findings_content = cli_findings_file.read_text(encoding="utf-8")
@@ -77,5 +83,8 @@ def test_dual_mode_end_to_end_pipeline_parity() -> None:
         else len(cli_anomalies)
     )
     assert cli_cnt == api_data["anomalies_count"]
+    assert (
+        api_data["output_files"]["operational_assessment_md"] == "output/operational_assessment.md"
+    )
     assert api_data["output_files"]["top_3_findings_md"] == "output/top_3_findings.md"
     assert api_data["output_files"]["sample_briefing_md"] == "output/sample_briefing.md"

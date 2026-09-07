@@ -196,6 +196,14 @@ class NumericVerifier:
 class GroundingVerifier:
     """Verifier for campaign identity, diagnostic grounding, and contract sanity."""
 
+    def __init__(self, unsupported_claim_rule: "UnsupportedClaimRule | None" = None) -> None:
+        """Initialize GroundingVerifier with optional UnsupportedClaimRule.
+
+        Args:
+            unsupported_claim_rule: Optional UnsupportedClaimRule instance.
+        """
+        self._unsupported_claim_rule = unsupported_claim_rule or UnsupportedClaimRule()
+
     def verify(
         self, result: BatchAnalysisResult, dossier: EvidenceDossier
     ) -> tuple[list[str], list[str]]:
@@ -280,6 +288,136 @@ class GroundingVerifier:
         return False
 
 
+class UnsupportedClaimRule:
+    """Verifier rule for detecting speculative claims and missing evidence grounding."""
+
+    UNOBSERVED_DIMENSIONS: dict[str, dict[str, tuple[str, ...]]] = {
+        "creative": {
+            "keywords": (
+                "creative",
+                "kreatif",
+                "reklam görseli",
+                "ad fatigue",
+                "creative fatigue",
+                "ad copy",
+                "reklam metni",
+            ),
+            "acknowledgments": (
+                "creative",
+                "kreatif",
+                "reklam görseli",
+                "ad fatigue",
+                "creative fatigue",
+                "ad copy",
+                "reklam metni",
+                "görsel",
+            ),
+        },
+        "infrastructure": {
+            "keywords": (
+                "payment gateway",
+                "ödeme sayfası",
+                "server crash",
+                "sunucu çökmesi",
+                "checkout error",
+                "ödeme geçidi",
+            ),
+            "acknowledgments": (
+                "payment gateway",
+                "ödeme sayfası",
+                "server crash",
+                "sunucu çökmesi",
+                "checkout error",
+                "ödeme geçidi",
+                "server",
+                "sunucu",
+                "checkout",
+                "event log",
+                "ga4",
+                "landing page",
+                "ödeme",
+            ),
+        },
+    }
+
+    DEFINITIVE_TERMS: tuple[str, ...] = (
+        "kesinleşmiştir",
+        "kesin olarak",
+        "kanıtlanmıştır",
+        "doğrulanmıştır",
+        "is confirmed",
+        "definitely",
+        "proven to be",
+        "conclusively confirmed",
+    )
+
+    def verify(
+        self, result: BatchAnalysisResult, dossier: EvidenceDossier | None = None
+    ) -> tuple[list[str], list[str]]:
+        """Audit BatchAnalysisResult for unsupported definitive claims and ungrounded hypotheses.
+
+        Returns:
+            Tuple of (errors, warnings).
+        """
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        for finding in result.findings:
+            narrative_texts = [
+                finding.root_cause_analysis,
+                finding.selected_hypothesis.statement,
+                finding.metric_change_summary,
+            ]
+
+            # 1. Definitive Assertion Detection
+            for dim_name, dim_config in self.UNOBSERVED_DIMENSIONS.items():
+                dim_keywords = dim_config["keywords"]
+
+                for text in narrative_texts:
+                    text_lower = text.lower()
+                    if any(kw in text_lower for kw in dim_keywords):
+                        matched_term = self._find_definitive_term(text_lower)
+                        if matched_term:
+                            errors.append(
+                                f"Unsupported definitive claim detected: '{matched_term}' "
+                                f"asserted for unobserved dimension '{dim_name}' "
+                                "without underlying dimension data."
+                            )
+                            break  # Record one error per dimension per narrative field
+
+            # 2. Mandatory missing_evidence Grounding Check
+            selected_stmt_lower = finding.selected_hypothesis.statement.lower()
+            for dim_name, dim_config in self.UNOBSERVED_DIMENSIONS.items():
+                dim_keywords = dim_config["keywords"]
+                dim_acks = dim_config["acknowledgments"]
+
+                if any(kw in selected_stmt_lower for kw in dim_keywords):
+                    missing_ev = finding.selected_hypothesis.missing_evidence
+                    has_acknowledgment = False
+                    if missing_ev:
+                        for ev_item in missing_ev:
+                            ev_lower = ev_item.lower()
+                            if any(ack in ev_lower for ack in dim_acks):
+                                has_acknowledgment = True
+                                break
+
+                    if not has_acknowledgment:
+                        errors.append(
+                            f"Ungrounded hypothesis: Selected hypothesis references "
+                            f"unobserved dimension '{dim_name}' but 'missing_evidence' "
+                            "fails to acknowledge required unobserved data."
+                        )
+
+        return errors, warnings
+
+    def _find_definitive_term(self, text_lower: str) -> str | None:
+        """Find the first definitive confirmation term present in lowercased text."""
+        for term in self.DEFINITIVE_TERMS:
+            if term in text_lower:
+                return term
+        return None
+
+
 class OutputVerifier:
     """Unified entry point auditing BatchAnalysisResult against EvidenceDossier."""
 
@@ -287,15 +425,18 @@ class OutputVerifier:
         self,
         grounding_verifier: GroundingVerifier | None = None,
         numeric_verifier: NumericVerifier | None = None,
+        unsupported_claim_rule: UnsupportedClaimRule | None = None,
     ) -> None:
         """Initialize OutputVerifier with customizable sub-verifiers.
 
         Args:
             grounding_verifier: Optional GroundingVerifier instance.
             numeric_verifier: Optional NumericVerifier instance.
+            unsupported_claim_rule: Optional UnsupportedClaimRule instance.
         """
         self._grounding_verifier = grounding_verifier or GroundingVerifier()
         self._numeric_verifier = numeric_verifier or NumericVerifier()
+        self._unsupported_claim_rule = unsupported_claim_rule or UnsupportedClaimRule()
 
     def verify(self, result: BatchAnalysisResult, dossier: EvidenceDossier) -> VerificationResult:
         """Audit result against dossier and aggregate all validation findings.
@@ -317,6 +458,10 @@ class OutputVerifier:
         n_errors, n_warnings = self._numeric_verifier.verify(result, dossier)
         errors.extend(n_errors)
         warnings.extend(n_warnings)
+
+        u_errors, u_warnings = self._unsupported_claim_rule.verify(result, dossier)
+        errors.extend(u_errors)
+        warnings.extend(u_warnings)
 
         return VerificationResult(
             is_valid=len(errors) == 0,

@@ -344,20 +344,25 @@ def _build_e2e_batch_result() -> BatchAnalysisResult:
 
 
 def test_e2e_artifact_generation_and_validation(tmp_path: Path) -> None:
-    """Execute ArtifactService.write_all and verify physical creation of all 3 deliverables."""
+    """Execute ArtifactService.write_all and verify physical creation of all 4 deliverables."""
     dossier = _build_e2e_dossier()
     result = _build_e2e_batch_result()
     target_dir = tmp_path / "deliverables"
 
     service = ArtifactService()
-    anomalies_path, top_findings_path, briefing_path = service.write_all(
+    anomalies_path, op_path, top_findings_path, briefing_path = service.write_all(
         dossier, result, target_dir
     )
 
     assert target_dir.is_dir()
     assert anomalies_path.is_file() and anomalies_path.stat().st_size > 0
+    assert op_path.is_file() and op_path.stat().st_size > 0
     assert top_findings_path.is_file() and top_findings_path.stat().st_size > 0
     assert briefing_path.is_file() and briefing_path.stat().st_size > 0
+
+    assert op_path.name == "operational_assessment.md"
+    assert top_findings_path.name == "top_3_findings.md"
+    assert op_path.read_text(encoding="utf-8") == top_findings_path.read_text(encoding="utf-8")
 
 
 def test_anomalies_json_structure_and_types(tmp_path: Path) -> None:
@@ -367,7 +372,7 @@ def test_anomalies_json_structure_and_types(tmp_path: Path) -> None:
     target_dir = tmp_path / "deliverables"
 
     service = ArtifactService()
-    anomalies_path, _, _ = service.write_all(dossier, result, target_dir)
+    anomalies_path, _, _, _ = service.write_all(dossier, result, target_dir)
 
     content = anomalies_path.read_text(encoding="utf-8")
     data = json.loads(content)
@@ -408,23 +413,36 @@ def test_anomalies_json_structure_and_types(tmp_path: Path) -> None:
 
 
 def test_top_3_findings_md_case_study_questions_compliance(tmp_path: Path) -> None:
-    """Validate output/top_3_findings.md physical structure and Case Study Questions compliance."""
+    """Validate operational_assessment.md structure & Case Study Question compliance."""
     dossier = _build_e2e_dossier()
     result = _build_e2e_batch_result()
     target_dir = tmp_path / "deliverables"
 
     service = ArtifactService()
-    _, top_findings_path, _ = service.write_all(dossier, result, target_dir)
+    _, op_path, top_findings_path, _ = service.write_all(dossier, result, target_dir)
 
-    content = top_findings_path.read_text(encoding="utf-8")
+    assert op_path.is_file() and op_path.stat().st_size > 0
+    assert top_findings_path.is_file() and top_findings_path.stat().st_size > 0
+
+    op_content = op_path.read_text(encoding="utf-8")
+    top_content = top_findings_path.read_text(encoding="utf-8")
+
+    # Assert dual synchronized alias parity
+    assert op_content == top_content
 
     # Header hierarchy assertions
-    assert content.startswith("# Executive Operational Report: Top 3 Critical Findings")
-    assert "## Summary Matrix" in content
-    assert "## Detailed Operational Analysis & Action Framework" in content
+    assert op_content.startswith("# Executive Operational Report: Top 3 Critical Findings")
+    assert "## Summary Matrix" in op_content
+    assert "## Detailed Operational Analysis & Action Framework" in op_content
 
     # Max 3 findings constraint check
-    finding_headers = [line for line in content.splitlines() if line.startswith("### Finding ")]
+    finding_headers = [
+        line
+        for line in op_content.splitlines()
+        if line.startswith("## Bulgu ")
+        or line.startswith("### Bulgu ")
+        or line.startswith("### Finding ")
+    ]
     assert len(finding_headers) <= 3
     assert len(finding_headers) == 2
 
@@ -433,27 +451,27 @@ def test_top_3_findings_md_case_study_questions_compliance(tmp_path: Path) -> No
         "Soru 1: Bulgu gerçek bir performans sorununa mı işaret etmektedir, "
         "yoksa verinin kendisinden mi kaynaklanmaktadır?"
     )
-    assert q1_text in content
-    assert "[VERİ / TRACKING HATASI]" in content
-    assert "[GERÇEK PERFORMANS DÜŞÜŞÜ]" in content
-    assert "Kök Neden Analizi:" in content
-    assert "Seçilen Hipotez:" in content
-    assert "Eksik Kanıt:" in content
+    assert q1_text in op_content
+    assert "[VERİ / TRACKING HATASI]" in op_content
+    assert "[GERÇEK PERFORMANS DÜŞÜŞÜ]" in op_content
+    assert "Kök Neden Analizi:" in op_content
+    assert "Seçilen Hipotez:" in op_content
+    assert "Eksik Kanıt:" in op_content
 
     # Case Study Question 2 assertions
     q2_text = "Soru 2: Bütçe, teklif veya kreatif tarafında hangi aksiyonu alırdınız?"
-    assert q2_text in content
-    assert "Bütçe Aksiyonu (`BUDGET`):" in content
-    assert "Teklif Aksiyonu (`BID`):" in content
-    assert "Kreatif Aksiyonu (`CREATIVE`):" in content
-    assert "Takip Aksiyonu (`TRACKING`):" in content
-    assert "Aksiyon Gerekçesi (Rationale):" in content
-    assert "Somut Operasyonel Adımlar:" in content
-    assert "1. Inspect GTM container trigger" in content
-    assert "2. Verify CAPI server endpoint" in content
+    assert q2_text in op_content
+    assert "Bütçe Aksiyonu (`BUDGET`):" in op_content
+    assert "Teklif Aksiyonu (`BID`):" in op_content
+    assert "Kreatif Aksiyonu (`CREATIVE`):" in op_content
+    assert "Takip Aksiyonu (`TRACKING`):" in op_content
+    assert "Aksiyon Gerekçesi (Rationale):" in op_content
+    assert "Somut Operasyonel Adımlar:" in op_content
+    assert "1. Inspect GTM container trigger" in op_content
+    assert "2. Verify CAPI server endpoint" in op_content
 
-    # Length & Scannability bounds check (Max 1200 words)
-    words = content.split()
+    # Length & Scannability bounds check (Max 1200 words / <= 1.5 pages)
+    words = op_content.split()
     assert len(words) <= 1200, f"Report word count ({len(words)}) exceeds scannability bounds"
 
 
@@ -464,7 +482,7 @@ def test_sample_briefing_md_structure(tmp_path: Path) -> None:
     target_dir = tmp_path / "deliverables"
 
     service = ArtifactService()
-    _, _, briefing_path = service.write_all(dossier, result, target_dir)
+    _, _, _, briefing_path = service.write_all(dossier, result, target_dir)
 
     content = briefing_path.read_text(encoding="utf-8")
 

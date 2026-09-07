@@ -105,6 +105,7 @@ def test_run_pipeline_successful_execution_sequence() -> None:
     mock_artifact_service = MagicMock()
     mock_artifact_service.write_all.return_value = (
         "output/anomalies.json",
+        "output/operational_assessment.md",
         "output/top_3_findings.md",
         "output/sample_briefing.md",
     )

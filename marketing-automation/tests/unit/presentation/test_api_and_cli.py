@@ -39,6 +39,7 @@ def create_mock_pipeline_result(status: str = "success") -> PipelineResult:
         ],
         output_files={
             "anomalies_json": "output/anomalies.json",
+            "operational_assessment_md": "output/operational_assessment.md",
             "top_3_findings_md": "output/top_3_findings.md",
             "sample_briefing_md": "output/sample_briefing.md",
         },

@@ -4,6 +4,7 @@ import pytest
 
 from src.agent.guardrails.verifier import (
     OutputVerifier,
+    UnsupportedClaimRule,
     VerificationResult,
 )
 from src.agent.schemas.reasoning import (
@@ -360,7 +361,11 @@ def test_performance_issue_type_grounding(
         top_campaign_evidence=(degraded_campaign,),
     )
 
-    hyp1 = Hypothesis(statement="Ad Fatigue", confidence=0.7)
+    hyp1 = Hypothesis(
+        statement="Ad Fatigue",
+        confidence=0.7,
+        missing_evidence=["Kreatif bazında performans verisi eksiktir."],
+    )
     hyp2 = Hypothesis(statement="Bid Competition", confidence=0.3)
     perf_finding = DiagnosedFinding(
         campaign_name="Perf_Campaign",
@@ -569,3 +574,171 @@ def test_contract_sanity_violations(
     assert res.is_valid is False
     assert any("must evaluate at least 2 competing hypotheses" in err for err in res.errors)
     assert any("must contain at least 1 concrete step" in err for err in res.errors)
+
+
+def test_speculative_definitive_claim_rejected(
+    valid_batch_result: BatchAnalysisResult, valid_dossier: EvidenceDossier
+) -> None:
+    """Verify definitive assertion about creative dimension is rejected."""
+    finding = valid_batch_result.findings[0]
+    bad_hyp = Hypothesis(
+        statement="Kreatif yorgunluğu",
+        supporting_evidence=["Conversions dropped by -57.14%"],
+        confidence=0.9,
+        missing_evidence=["Kreatif düzeyinde performans verisine ihtiyaç duyulmaktadır."],
+    )
+    bad_finding = finding.model_copy(
+        update={
+            "root_cause_analysis": "Kreatif yorgunluğu kesinleşmiştir.",
+            "selected_hypothesis": bad_hyp,
+        }
+    )
+    bad_result = valid_batch_result.model_copy(update={"findings": [bad_finding]})
+
+    verifier = OutputVerifier()
+    res = verifier.verify(bad_result, valid_dossier)
+    assert res.is_valid is False
+    expected_err = (
+        "Unsupported definitive claim detected: 'kesinleşmiştir' "
+        "asserted for unobserved dimension 'creative'"
+    )
+    assert any(expected_err in err for err in res.errors)
+
+
+def test_properly_grounded_hypothetical_framing_passes(
+    valid_batch_result: BatchAnalysisResult, valid_dossier: EvidenceDossier
+) -> None:
+    """Verify hypothetical framing with proper missing_evidence acknowledgment passes."""
+    finding = valid_batch_result.findings[0]
+    good_hyp1 = Hypothesis(
+        statement="Kreatif yorgunluğu olası bir hipotezdir",
+        supporting_evidence=["Conversions dropped by -57.14%"],
+        confidence=0.8,
+        missing_evidence=["Doğrulama için kreatif düzeyinde veriye ihtiyaç duyulmaktadır."],
+    )
+    good_hyp2 = Hypothesis(
+        statement="Bütçe kısıtı",
+        confidence=0.2,
+        missing_evidence=[],
+    )
+    good_finding = finding.model_copy(
+        update={
+            "root_cause_analysis": (
+                "Performans düşüşü kreatif yorgunluğundan kaynaklanıyor olabilir."
+            ),
+            "competing_hypotheses": [good_hyp1, good_hyp2],
+            "selected_hypothesis": good_hyp1,
+        }
+    )
+    good_result = valid_batch_result.model_copy(update={"findings": [good_finding]})
+
+    verifier = OutputVerifier()
+    res = verifier.verify(good_result, valid_dossier)
+    assert res.is_valid is True
+    assert len(res.errors) == 0
+
+
+def test_unobserved_hypothesis_empty_missing_evidence_rejected(
+    valid_batch_result: BatchAnalysisResult, valid_dossier: EvidenceDossier
+) -> None:
+    """Verify hypothesis referencing unobserved dimension with empty missing_evidence fails."""
+    finding = valid_batch_result.findings[0]
+    unack_hyp = Hypothesis(
+        statement="Kreatif yorgunluğu olası bir hipotezdir",
+        supporting_evidence=["Conversions dropped by -57.14%"],
+        confidence=0.8,
+        missing_evidence=[],
+    )
+    unack_finding = finding.model_copy(
+        update={
+            "root_cause_analysis": "Olası performans düşüş nedeni.",
+            "competing_hypotheses": [unack_hyp, finding.competing_hypotheses[1]],
+            "selected_hypothesis": unack_hyp,
+        }
+    )
+    bad_result = valid_batch_result.model_copy(update={"findings": [unack_finding]})
+
+    verifier = OutputVerifier()
+    res = verifier.verify(bad_result, valid_dossier)
+    assert res.is_valid is False
+    expected_err = (
+        "Ungrounded hypothesis: Selected hypothesis references unobserved dimension 'creative'"
+    )
+    assert any(expected_err in err for err in res.errors)
+
+
+def test_unobserved_hypothesis_with_appropriate_missing_evidence_passes(
+    valid_batch_result: BatchAnalysisResult, valid_dossier: EvidenceDossier
+) -> None:
+    """Verify hypothesis referencing unobserved dimension with matching missing_evidence passes."""
+    finding = valid_batch_result.findings[0]
+    infra_hyp = Hypothesis(
+        statement="Ödeme sayfası çökmesi olası bir nedendir",
+        supporting_evidence=["Conversions dropped by -57.14%"],
+        confidence=0.85,
+        missing_evidence=["GA4 event log ve sunucu telemetry verisi eksiktir."],
+    )
+    infra_finding = finding.model_copy(
+        update={
+            "root_cause_analysis": "Dönüşümler sıfırlandı, teknik bir sorun olabilir.",
+            "competing_hypotheses": [infra_hyp, finding.competing_hypotheses[1]],
+            "selected_hypothesis": infra_hyp,
+        }
+    )
+    valid_result = valid_batch_result.model_copy(update={"findings": [infra_finding]})
+
+    verifier = OutputVerifier()
+    res = verifier.verify(valid_result, valid_dossier)
+    assert res.is_valid is True
+    assert len(res.errors) == 0
+
+
+def test_unobserved_infrastructure_definitive_claim_rejected(
+    valid_batch_result: BatchAnalysisResult, valid_dossier: EvidenceDossier
+) -> None:
+    """Verify definitive assertion about server infrastructure dimension is rejected."""
+    finding = valid_batch_result.findings[0]
+    infra_hyp = Hypothesis(
+        statement="Ödeme geçidi hatası",
+        confidence=0.9,
+        missing_evidence=[],
+    )
+    infra_finding = finding.model_copy(
+        update={
+            "root_cause_analysis": "Ödeme sayfası çökmesi kesin olarak kanıtlanmıştır.",
+            "selected_hypothesis": infra_hyp,
+        }
+    )
+    bad_result = valid_batch_result.model_copy(update={"findings": [infra_finding]})
+
+    verifier = OutputVerifier()
+    res = verifier.verify(bad_result, valid_dossier)
+    assert res.is_valid is False
+    expected_claim_err = (
+        "Unsupported definitive claim detected: 'kesin olarak' "
+        "asserted for unobserved dimension 'infrastructure'"
+    )
+    expected_ground_err = (
+        "Ungrounded hypothesis: Selected hypothesis references "
+        "unobserved dimension 'infrastructure'"
+    )
+    assert any(expected_claim_err in err for err in res.errors)
+    assert any(expected_ground_err in err for err in res.errors)
+
+
+def test_unsupported_claim_rule_standalone(valid_batch_result: BatchAnalysisResult) -> None:
+    """Verify UnsupportedClaimRule standalone execution."""
+    finding = valid_batch_result.findings[0]
+    bad_hyp = Hypothesis(
+        statement="Creative decay is confirmed",
+        confidence=0.9,
+        missing_evidence=[],
+    )
+    bad_finding = finding.model_copy(update={"selected_hypothesis": bad_hyp})
+    bad_result = valid_batch_result.model_copy(update={"findings": [bad_finding]})
+
+    rule = UnsupportedClaimRule()
+    errors, warnings = rule.verify(bad_result)
+    assert len(errors) == 2
+    assert any("Unsupported definitive claim detected: 'is confirmed'" in e for e in errors)
+    assert any("Ungrounded hypothesis" in e for e in errors)

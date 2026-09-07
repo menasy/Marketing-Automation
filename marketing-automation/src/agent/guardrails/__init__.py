@@ -5,6 +5,7 @@ from src.agent.guardrails.verifier import (
     GroundingVerifier,
     NumericVerifier,
     OutputVerifier,
+    UnsupportedClaimRule,
     VerificationResult,
 )
 
@@ -12,6 +13,7 @@ __all__ = [
     "VerificationResult",
     "NumericVerifier",
     "GroundingVerifier",
+    "UnsupportedClaimRule",
     "OutputVerifier",
     "DeterministicFallbackGenerator",
 ]

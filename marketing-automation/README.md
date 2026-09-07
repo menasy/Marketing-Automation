@@ -1,4 +1,4 @@
-# Marketing Automation: Gemini Agentic Anomaly Detection System
+# Marketing Automation: Technical & Architectural Manual
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Architecture](https://img.shields.io/badge/architecture-Clean%20Architecture%20%7C%20SOLID-emerald.svg)
@@ -7,265 +7,395 @@
 ![Code Quality](https://img.shields.io/badge/code%20style-ruff-black.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-**Marketing Automation**, dijital pazarlama kanallarındaki (Google Ads, Meta Ads, TikTok Ads vb.) huni (funnel) metrik sapmalarını, performans düşüşlerini ve veri kalitesi anomalilerini tespit etmek üzere geliştirilmiş **Agentic AI & Clean Architecture** tabanlı bir otonom analiz platformudur.
+---
 
-Sistem, geleneksel kurallı uyarı sistemlerinin ürettiği yanlış alarmları (false positives) ve yüksek LLM maliyetlerini/zaman aşımı (timeout) sorunlarını ortadan kaldırmak için **Tek Turlu Toplu Muhakeme (Single-Turn Batch Reasoning)** mimarisini kullanır.
+## 1. Overview
+
+**Mission & Context / Misyon ve Bağlam**:
+The **Marketing Automation System** is an enterprise-grade agentic AI platform engineered for automated anomaly detection, funnel performance analysis, and root-cause diagnosis across multi-platform advertising data (Google Ads, Meta Ads).
+
+**Problem Solved / Çözülen Problem**:
+Traditional rule-based monitoring tools generate high rates of false positives, while multi-turn autonomous LLM agent loops suffer from prohibitive latency, high API costs, n8n workflow execution timeouts, and HTTP 429 rate limit throttles. This platform solves these bottlenecks by pairing a deterministic, zero-hallucination Python evidence engine with a **Single-Turn Batch Reasoning Agent (Gemini 2.5 Flash)** and strict output verification guardrails.
 
 ---
 
-## 🏗️ 1. Temel Mimari İlkeler (Clean Architecture & SOLID)
+## 2. Architecture
 
-Proje, yazılımın sürdürülebilirliğini, test edilebilirliğini ve LLM/veritabanı bağımlılıklarından izole edilmesini sağlamak amacıyla **Clean Architecture (Temiz Mimari)** ve **SOLID** ilkelerine %100 uyumlu olarak tasarlanmıştır.
-
-```
-                  ┌─────────────────────────────────────────┐
-                  │           Presentation Layer            │
-                  │     (FastAPI REST API / CLI Main)       │
-                  └────────────────────┬────────────────────┘
-                                       │
-                                       ▼
-                  ┌─────────────────────────────────────────┐
-                  │            Application Layer            │
-                  │   (RunPipelineUseCase, ArtifactService) │
-                  └──────────┬────────────────────┬─────────┘
-                             │                    │
-                             ▼                    ▼
-     ┌───────────────────────────────┐   ┌───────────────────────────────┐
-     │          Agent Layer          │   │      Infrastructure Layer     │
-     │  (BatchReasoningOrchestrator, │   │    (GeminiLLM, CSVReader,     │
-     │    Verifier, FallbackGen)     │   │     SlackNotificationPort)    │
-     └───────────────┬───────────────┘   └───────────────┬───────────────┘
-                     │                                   │
-                     └─────────────────┬─────────────────┘
-                                       │
-                                       ▼
-                  ┌─────────────────────────────────────────┐
-                  │              Domain Layer               │
-                  │ (Entities, Enums, ValueObjects, Dossier)│
-                  └─────────────────────────────────────────┘
-```
-
-### Katman Sorumlulukları ve Bağımlılık Yönü
-
-1. **Domain Katmanı (`src/domain/`)**: Projenin çekirdeğidir. Dış dünyadan (FastAPI, Gemini, Pandas) tamamen izoledir. Saf Python `@dataclass` yapıları (`Anomaly`, `EvidenceDossier`, `DataQualitySignal`, `MetricBaseline`) içerir. İş kuralları ve veri modelleri burada tanımlanır.
-2. **Application Katmanı (`src/application/`)**: Kullanım senaryolarını (`RunPipelineUseCase`) ve servis arayüzlerini (ports) yönetir. İş akışını orkestre eder.
-3. **Agent Katmanı (`src/agent/`)**: Gemini tabanlı toplu muhakeme orkestratörünü (`BatchReasoningOrchestrator`), doğrulama kapılarını (`NumericVerifier`, `GroundingVerifier`) ve deterministik düşüş mekanizmasını (`DeterministicFallbackGenerator`) barındırır.
-4. **Infrastructure Katmanı (`src/infrastructure/`)**: Veri okuyucuları (`CSVDataReader`), LLM adaptörleri (`GeminiLLMClient`), bildirim servisleri (`SlackNotificationAdapter`) ve dosya yazıcılarını barındırır.
-5. **Presentation Katmanı (`src/presentation/` & `src/cli/`)**: Dış dünya ile etkileşim noktalarıdır (FastAPI endpoint'leri ve CLI argüman ayrıştırıcısı).
-
-### Strict Data Boundary Rule (İzolasyon Kuralı)
-- **Pandas DataFrame İzolasyonu**: Pandas, `CSVDataReader` içerisinde yalnızca dosya okuma ve ilk istatistiksel hesaplama için kullanılır. Domain katmanına hiçbir zaman DataFrame nesnesi sızmaz; tüm veriler immutable, strongly-typed `@dataclass` nesnelerine dönüştürülür.
-- **Sıfır `Any` Şartı**: Tüm kod tabanı `mypy --strict` standartlarına uyar. Belirsiz tiplere ve `Any` kullanımına izin verilmez.
-
----
-
-## ⚖️ 2. Python vs. LLM Sorumluluk Dağılımı
-
-Sistemde matematiksel determinizm ile sözel muhakeme yetenekleri kesin çizgilerle ayrılmıştır:
-
-| Sorumluluk Alanı | Modül / Katman | Açıklama & Sınırlar |
-| :--- | :--- | :--- |
-| **İstatistiksel Sapma & Z-Skoru** | **Python (Domain/Infra)** | Rolling 7-günlük ortalama, standart sapma, z-skoru ($\ge 2.0$) ve yüzde değişimler hesaplanır. Sıfır metinsel teşhis üretilir. |
-| **Veri Kalite Sinyali (`DataQualitySignal`)** | **Python (Domain)** | 8 tam huni metriği (Impressions, Clicks, Spend, Conversions, Revenue, CTR, CPC, ROAS) arasındaki uyumsuzluklar (ör. harcama var ama gösterim 0, dönüşüm var ama gelir 0) matematiksel kurallarla sinyalleşir. |
-| **Kök Neden Teşhisi** | **Agent (Gemini 2.5 Flash)** | `EvidenceDossier` verisini okuyarak sapmanın **`DATA_QUALITY`** (izleme hatası) mu yoksa **`PERFORMANCE`** (gerçek kampanya çöküşü) mü olduğunu metrik korelasyonu ile saptar. |
-| **Reçeteli Aksiyon Planı** | **Agent (Gemini 2.5 Flash)** | Teşhise uygun 4 kanallı (Bütçe, Teklif/Bid, Kreatif, Tracking) somut aksiyon adımları önerir. |
-| **C-Level Sabah Brifingi** | **Agent (Gemini 2.5 Flash)** | Pazarlama direktörleri ve C-Level yöneticiler için 3 maddelik stratejik özet ve risk derecelendirmesi üretir. |
-
----
-
-## 🛡️ 3. Doğrulama Kapısı (Verifier Gate) & Fail-Safe Fallback
-
-LLM halüsinasyonlarını engellemek ve sistem sürekliliğini %100 garanti altına almak için çift kademeli doğrulama ve düşüş mekanizması mevcuttur.
+The codebase enforces **Clean Architecture** principles and **SOLID** design patterns, strictly decoupling domain core logic from infrastructure frameworks, external LLM SDKs, and presentation layers.
 
 ```text
-[EvidenceDossier] ──> [Gemini LLM (Batch Reasoning)] ──> [Structured Analysis Result]
-                                                                  │
-                                                                  ▼
-                                                       [Verifier Gate Check]
-                                                      ┌───────────┴───────────┐
-                                                      │                       │
-                                                 (Doğrulandı)             (Hata Var)
-                                                      │                       │
-                                                      ▼                       ▼
-                                              [Artifact & Slack]     [1-Step Reflection Loop]
-                                                                              │
-                                                                      ┌───────┴───────┐
-                                                                      │               │
-                                                                   (Başarılı)     (Yine Hatalı)
-                                                                      │               │
-                                                                      ▼               ▼
-                                                              [Artifact & Slack]  [Deterministic Fallback]
+                    ┌─────────────────────────────────────────┐
+                    │           Presentation Layer            │
+                    │      (FastAPI REST API / CLI Main)      │
+                    └────────────────────┬────────────────────┘
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │            Application Layer            │
+                    │   (RunPipelineUseCase, ArtifactService) │
+                    └──────────┬────────────────────┬─────────┘
+                               │                    │
+                               ▼                    ▼
+       ┌───────────────────────────────┐   ┌───────────────────────────────┐
+       │          Agent Layer          │   │      Infrastructure Layer     │
+       │  (BatchReasoningOrchestrator, │   │    (GeminiLLM, CSVReader,     │
+       │    Verifier, FallbackGen)     │   │     SlackNotificationPort)    │
+       └───────────────┬───────────────┘   └───────────────┬───────────────┘
+                       │                                   │
+                       └─────────────────┬─────────────────┘
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────────┐
+                    │              Domain Layer               │
+                    │ (Entities, Enums, ValueObjects, Dossier)│
+                    └─────────────────────────────────────────┘
 ```
 
-1. **NumericVerifier ($\pm 1.0\%$ Tolerans)**: LLM tarafından üretilen çıktılardaki tüm sayısal değerleri, `EvidenceDossier` içerisindeki ham verilerle karşılaştırır. Sapma $\pm 1.0\%$ sınırını aşarsa doğrulama başarısız olur.
-2. **GroundingVerifier**: LLM çıktısında bahsi geçen kampanya isimleri, metrik adları ve z-skorlarının kaynak dosyada bulunup bulunmadığını kontrol ederek halüsinasyon oluşumunu engeller.
-3. **1-Turlu Yansıma (Reflection Retry)**: Doğrulama başarısız olursa, hatanın spesifik nedeni LLM'e geri bildirilerek 1 defalık düzeltme hakkı verilir.
-4. **DeterministicFallbackGenerator**: LLM API çökmesi, rate-limit aşımı veya ikinci doğrulama hatası durumunda devreye girer. Boru hattını kesintiye uğratmadan, Python tarafından deterministik olarak üretilen kural tabanlı veri görünümünü yayınlar.
+### Clean Architecture Layers & Strict Dependency Flow
+1. **Domain Layer (`src/domain/`)**: Pure business models (`@dataclass(frozen=True)`), domain enums (`StrEnum`), custom exceptions, and domain services (`BaselineCalculator`, `ZScoreService`). **Zero external dependencies** (no Pandas, FastAPI, Pydantic, HTTPX, or Google GenAI SDK).
+2. **Application Layer (`src/application/`)**: Use cases (`RunPipelineUseCase`) and abstract port contracts (`typing.Protocol`). Coordinates execution without exposing infrastructure implementation details.
+3. **Agent Layer (`src/agent/`)**: Encapsulates Gemini 2.5 Flash batch reasoning, read-only analytical tools (`ToolRegistry`, `BaseTool`), structured Pydantic v2 output schemas, and verification guardrails (`NumericVerifier`, `GroundingVerifier`, `DeterministicFallbackGenerator`).
+4. **Infrastructure Layer (`src/infrastructure/`)**: Implements application ports. Handles raw CSV parsing, currency normalization, Gemini API client communication, file artifact persisting, and Slack Block Kit notifications. Pandas is strictly isolated within CSV readers.
+5. **Presentation Layer (`src/presentation/` & `src/cli/`)**: REST API endpoints (FastAPI) and headless CLI wrapper (`main.py`). Both entrypoints invoke the exact same `RunPipelineUseCase` port.
 
 ---
 
-## ⚙️ 4. Kurulum & Yapılandırma
+## 3. End-to-End Flow
 
-### Gereksinimler
-- Python 3.11+
-- Docker & Docker Compose (Konteynerli çalıştırma için)
-- Git
-
-### Yerel Geliştirme Ortamı Kurulumu
-
-```bash
-# 1. Depoyu klonlayın
-git clone https://github.com/menasy/Marketing-Automation.git
-cd Marketing-Automation/marketing-automation
-
-# 2. Sanal ortam oluşturun ve aktif edin
-python3 -m venv .venv
-source .venv/bin/venv/bin/activate  # Linux/macOS
-
-# 3. Bağımlılıkları yükleyin
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 4. Ortam değişkenlerini hazırlayın
-cp .env.example .env
-```
-
-### Ortam Değişkenleri (`.env`)
-
-```env
-# Gemini API Yapılandırması
-GEMINI_API_KEY="your-gemini-api-key-here"
-GEMINI_MODEL_NAME="gemini-2.5-flash"
-
-# Slack Bildirim Entegrasyonu
-SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-
-# Sistem Ayarları
-LOG_LEVEL="INFO"
-ENVIRONMENT="production"
-OUTPUT_DIR="./output"
-DATA_DIR="./data"
+```text
+  [Raw Ad CSVs (Google/Meta)]
+              │
+              ▼
+  [CSV Readers & Currency Normalizer (EUR/GBP -> USD)]
+              │
+              ▼
+  [Grain Aggregator (platform × account × campaign × country × day)]
+              │
+              ▼
+  [Deterministic Metric Engine (CTR, CPC, CPM, CPA, ROAS)]
+              │
+              ▼
+  [Rolling Baseline (D-7..D-1) & Statistical Z-Score Engine (|Z| >= 2.0)]
+              │
+              ▼
+  [Anomaly Candidate Screener & Volume/Spend False-Positive Filters]
+              │
+              ▼
+  [Evidence Dossier Compiler (Data Quality vs Performance Signals)]
+              │
+              ▼
+  [Gemini 2.5 Flash Agent (Single-Turn Batch Reasoning, temp=0.0)]
+              │
+              ▼
+  [Output Verifier (NumericVerifier ±1.0% | GroundingVerifier | UnsupportedClaimRule)]
+        ┌─────┴────────────────────────┐
+   (Passed)                       (Failed)
+        │                              │
+        ▼                              ▼
+  [Artifacts & Slack]       [1-Turn Reflection Retry]
+                                       │
+                            ┌──────────┴──────────┐
+                        (Passed)              (Failed)
+                            │                     │
+                            ▼                     ▼
+                      [Artifacts & Slack]  [Deterministic Fallback]
 ```
 
 ---
 
-## 🚀 5. Kullanım Kılavuzu (Çalıştırma Modları)
-
-### Mod A: Headless CLI Kullanımı
-Komut satırından belirli bir tarih için boru hattını tetiklemek için:
-
-```bash
-# Belirli bir tarih için analiz çalıştırma
-python -m src.cli.main --date 2026-09-07
-
-# Özel veri ve çıktı dizinleri ile çalıştırma
-python -m src.cli.main --date 2026-09-07 --data-dir ./custom_data --output-dir ./custom_output
-```
-
-### Mod B: FastAPI REST API Kullanımı
-Web servisini başlatmak için:
-
-```bash
-# Development sunucusunu başlatın
-uvicorn src.presentation.api.main:app --reload --host 0.0.0.0 --port 8000
-```
-- **Interactive Swagger Docs**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
-#### Endpoint Örneği: `POST /api/v1/pipeline/run`
-```bash
-curl -X 'POST' \
-  'http://localhost:8000/api/v1/pipeline/run' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "target_date": "2026-09-07",
-  "force_refresh": false
-}'
-```
-
-### Mod C: Zero-Touch Docker Compose & n8n Entegrasyonu
-Tüm sistemi (FastAPI Servisi + n8n Otomasyon Motoru) tek komutla ayağa kaldırın:
-
-```bash
-# Konteynerleri arka planda başlatın
-docker compose up -d
-```
-
-- **n8n Web UI**: `http://localhost:5678` (Varsayılan Giriş: `admin` / `admin123456`)
-- **Otomatik İş Akışı**: `automation/workflow.json` dosyası konteyner ilk açıldığında otomatik olarak n8n ortamına aktarılır.
-- **Zamanlayıcı (Cron Trigger)**: Her sabah **08:00 Europe/Istanbul** saatinde tetiklenerek `http://api:8000/api/v1/pipeline/run` endpoint'ine istek atar ve çıktıları ortak `./output` hacmine (volume) yazar.
-
----
-
-## 📁 6. Proje Dizin Haritası
+## 4. Project Structure
 
 ```text
 marketing-automation/
-├── .env.example                 # Ortam değişkenleri şablonu
-├── .gitignore                   # Git hariç tutma kuralları
-├── docker-compose.yml           # API ve n8n servis orkestrasyonu
-├── Dockerfile                   # Üretim ortamı multi-stage Docker imajı
-├── README.md                    # Teknik & Mimari dokümantasyon (Türkçe)
-├── USER.md                      # Büyüme & Pazarlama Operatör Kılavuzu (Türkçe)
-├── pyproject.toml               # Tool yapılandırmaları (Ruff, Mypy, Pytest)
-├── requirements.txt             # Bağımlılık listesi
+├── .env.example                 # Environment variables template
+├── .gitignore                   # Git exclusion rules
+├── docker-compose.yml           # Multi-container orchestration (FastAPI + n8n)
+├── Dockerfile                   # Multi-stage production container image
+├── README.md                    # Canonical Technical & Architectural Manual
+├── USER.md                      # Operational & Executive User Guide
+├── pyproject.toml               # Tooling configs (Ruff, Mypy strict, Pytest)
+├── requirements.txt             # Project dependencies
 ├── automation/
-│   └── workflow.json            # n8n otomatik içe aktarılabilir cron iş akışı
-├── scripts/
-│   └── setup-n8n.sh             # n8n sıfır temaslı auto-import başlatma betiği
-├── data/                        # Girdi CSV dosyaları
-│   └── daily_marketing_data.csv # Günlük huni metrik verileri
-├── output/                      # Üretilen dinamik rapor çıktıları
-│   ├── anomalies.json           # Ham anomali ve z-skoru JSON çıktısı
-│   ├── top_3_findings.md        # Öncelikli 3 kritik vaka incelemesi
-│   └── sample_briefing.md       # C-Level yönetim özeti
-├── src/                         # Temel Kaynak Kodlar (Clean Architecture)
-│   ├── agent/                   # LLM & Agentik Katman
-│   │   ├── guardrails/          # Verifier (Numeric/Grounding) & Fallback
+│   ├── workflow.json            # Auto-importable n8n scheduling workflow
+│   └── README.md                # n8n & Slack integration instructions
+├── data/                        # Raw daily advertising CSV input files
+│   ├── daily_marketing_data.csv
+│   └── ad_reporting_data.csv
+├── output/                      # Pipeline execution artifacts & briefs
+│   ├── anomalies.json
+│   ├── top_3_findings.md
+│   ├── operational_assessment.md
+│   └── sample_briefing.md
+├── prompts/                     # Version-controlled LLM prompt templates
+│   └── anomaly_analysis_v1.txt
+├── src/                         # Core Python Source (Clean Architecture)
+│   ├── agent/                   # Reasoning, Guardrails, Tools
+│   │   ├── guardrails/          # Verifiers & Fallback Generator
 │   │   ├── orchestrator.py      # BatchReasoningOrchestrator
-│   │   ├── prompt_templates.py  # Gemini sistem ve kullanıcı promptları
-│   │   └── tools/               # Agent araç tanımları ve kayıt defteri
-│   ├── application/             # Kullanım Senaryoları & Portlar
-│   │   ├── ports/               # Soyut arayüzler (LLM, Reader, Slack)
-│   │   ├── services/            # ArtifactService ve rapor yazıcılar
-│   │   └── use_cases/           # RunPipelineUseCase (Ana İş Akışı)
-│   ├── cli/                     # Komut Satırı Arayüzü (CLI Main)
-│   │   └── main.py              # Headless CLI giriş noktası
-│   ├── domain/                  # İş Kuralları & Varlıklar (Entities)
-│   │   ├── entities.py          # Anomaly, EvidenceDossier, AnalysisResult
+│   │   ├── prompt_templates.py  # Prompt management
+│   │   └── tools/               # Read-only evidence retrieval tools
+│   ├── application/             # Application Use Cases & Ports
+│   │   ├── ports/               # Infrastructure Interfaces
+│   │   ├── services/            # ArtifactService & Formatters
+│   │   └── use_cases/           # RunPipelineUseCase
+│   ├── cli/                     # Headless Command Line Interface
+│   │   └── main.py
+│   ├── domain/                  # Pure Business Logic & Entities
+│   │   ├── entities.py          # Value Objects, Dossier, Findings
 │   │   ├── enums.py             # Severity, RootCause, MetricType
-│   │   └── services.py          # Z-score ve Baseline hesaplama servisleri
-│   ├── infrastructure/          # Dış Entegrasyonlar & Adaptörler
-│   │   ├── data_readers/        # CSVDataReader (Pandas izolasyonu)
-│   │   ├── llm/                 # GeminiLLMClient (Google GenAI SDK)
-│   │   └── notifications/       # SlackNotificationAdapter (Dynamic Block Kit)
-│   └── presentation/            # REST API (FastAPI)
-│       └── api/                 # Endpoint tanımları ve FastAPI uygulaması
-└── tests/                       # Test Süiti (290+ Test, >%90 Coverage)
-    ├── unit/                    # Birim testleri (Domain, Application, Agent, Infra)
-    └── integration/             # Entegrasyon testleri (API, CLI, Docker/n8n)
+│   │   └── services.py          # Z-score & Baseline calculators
+│   ├── infrastructure/          # Adapters & External Drivers
+│   │   ├── data_readers/        # Pandas CSV Readers & Normalizer
+│   │   ├── llm/                 # Gemini API SDK Adapter
+│   │   └── notifications/       # Slack Block Kit Adapter
+│   └── presentation/            # REST API Layer
+│       └── api/                 # FastAPI application & routes
+└── tests/                       # Automated Test Suite (Pytest)
+    ├── unit/                    # Unit tests for Domain, Agent, Infra
+    └── integration/             # E2E Pipeline, API & n8n config tests
 ```
 
 ---
 
-## 🧪 7. Test & Kalite Güvencesi
+## 5. Data Layer
 
-Projede sıfır toleranslı kalite kapıları uygulanmaktadır. Kod değişikliklerinin ardından aşağıdaki doğrulama komutlarını çalıştırın:
+The Data Layer ingests heterogeneous advertising CSV exports from Google Ads and Meta Ads.
+- **Ingestion & Sanitization**: Trims whitespace, parses dates into ISO-8601 strings (`YYYY-MM-DD`), strips currency symbols, and handles missing or malformed values safely.
+- **Platform Discrepancies**: Maps platform-specific field headers (e.g. `Cost` / `Amount Spent` $\rightarrow$ `spend`, `Impr.` / `Impressions` $\rightarrow$ `impressions`) into unified schema fields.
+- **Currency Normalization**: Converts non-USD currencies (EUR, GBP, TRY) into USD using configured static exchange rates (`EUR_USD = 1.08`, `GBP_USD = 1.27`, `TRY_USD = 0.029`).
 
+---
+
+## 6. Normalized Schema
+
+### Canonical Analytical Grain
+The system enforces a strict canonical grain for all analytical operations:
+`1 row = platform × account × campaign × country × day`
+
+### Aggregation Rules
+Identical grain rows are grouped and aggregated using additive sums for volumes before deriving non-additive ratios:
+- $\text{Spend} = \sum(\text{spend})$
+- $\text{Impressions} = \sum(\text{impressions})$
+- $\text{Clicks} = \sum(\text{clicks})$
+- $\text{Conversions} = \sum(\text{conversions})$
+- $\text{Conversion Value} = \sum(\text{conversion\_value})$
+
+### Schema Field Specification
+| Field Name | Type | Description |
+| :--- | :--- | :--- |
+| `platform` | `str` | Ad Network (`Google Ads`, `Meta Ads`) |
+| `account_id` | `str` | Account Identifier |
+| `campaign_id` | `str` | Unique Campaign Identifier |
+| `country` | `str` | ISO 2-letter Country Code (`US`, `DE`, `GB`) |
+| `date` | `str` | ISO-8601 Date (`YYYY-MM-DD`) |
+| `spend` | `float` | Daily Cost in USD |
+| `impressions` | `int` | Raw Impression Volume |
+| `clicks` | `int` | Raw Click Count |
+| `conversions` | `float` | Attributed Conversion Volume |
+| `conversion_value` | `float` | Revenue in USD |
+
+---
+
+## 7. Metric Definitions
+
+Derived ratio metrics are computed deterministically after volume aggregation. To maintain mathematical stability, all formulas implement **Zero-Division Protection Rules** returning `None` whenever the denominator is 0 (never raising exceptions or producing `NaN`/`Inf`).
+
+- **CTR (Click-Through Rate)**: $\frac{\text{clicks}}{\text{impressions}}$ (Return `None` if $\text{impressions} == 0$)
+- **CPC (Cost Per Click)**: $\frac{\text{spend}}{\text{clicks}}$ (Return `None` if $\text{clicks} == 0$)
+- **CPM (Cost Per Mille)**: $\frac{\text{spend}}{\text{impressions}} \times 1000$ (Return `None` if $\text{impressions} == 0$)
+- **CPA (Cost Per Acquisition)**: $\frac{\text{spend}}{\text{conversions}}$ (Return `None` if $\text{conversions} == 0$)
+- **ROAS (Return On Ad Spend)**: $\frac{\text{conversion\_value}}{\text{spend}}$ (Return `None` if $\text{spend} == 0$)
+
+---
+
+## 8. Anomaly Detection
+
+### Rolling Baseline Computation
+For target date $D$, historical baseline statistics are computed across a sliding window of $N$ previous days ($D-N$ to $D-1$, default $N=7$).
+- **Look-Ahead Bias Protection**: Target date $t = D$ is strictly excluded from historical mean $\mu$ and standard deviation $\sigma$ calculations ($t < D$).
+
+### Statistical Formulas
+- **Sample Mean ($\mu$)**: $\mu = \frac{1}{N} \sum_{i=1}^{N} X_i$
+- **Sample Standard Deviation ($\sigma$)**: $\sigma = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} (X_i - \mu)^2}$
+- **Percentage Change ($\Delta\%$)**: $\Delta\% = \frac{X_D - \mu}{\mu} \times 100$
+- **Statistical $Z$-Score**: $Z = \frac{X_D - \mu}{\sigma}$ (If $\sigma == 0$, $Z = 0.0$)
+
+---
+
+## 9. Threshold Rationale & False-Positive Guards
+
+### Threshold Rationale
+- **$|Z| \ge 2.0$**: Corresponds to a 95.45% statistical confidence interval under normal distribution, identifying anomalies that deviate beyond standard operational variance.
+- **$|\Delta| \ge 20\%$**: Acts as a secondary magnitude screener to filter out statistically significant but operationally negligible fluctuations.
+
+### False-Positive Guards
+1. **Minimum Historical Observations**: Requires at least 7 historical days of data prior to target date $D$.
+2. **Minimum Spend Guard**: Requires historical average spend $\ge \$50.00$ to eliminate low-volume campaigns with high variance.
+3. **Volume Filters**: Prevents small-denominator skew (e.g. 1 click dropping to 0 clicks causing a -100% CTR anomaly).
+
+---
+
+## 10. AI Agent Architecture
+
+The AI Agent utilizes **Gemini 2.5 Flash** configured with `temperature=0.0` for single-turn structured batch reasoning over the pre-compiled `EvidenceDossier`.
+
+### Pydantic v2 Schema Contract
+- `BatchAnalysisResult`: Root output schema containing top findings, briefing, and operational recommendations.
+- `DiagnosedFinding`: Contains campaign metadata, root cause (`DATA_QUALITY` vs. `PERFORMANCE`), primary hypothesis, confidence score (0.0-1.0), and `missing_evidence`.
+- `OperationalActionPlan`: Structured 4-vector action guidance (Budget, Bid, Creative, Tracking).
+- `Hypothesis`: Formulated primary and competing diagnostic hypotheses.
+
+---
+
+## 11. Tool Architecture
+
+Adapted from the **KobiAI** architectural pattern, the agent uses read-only evidence retrieval tools extending `BaseTool` registered in a central `ToolRegistry`:
+- `GetCampaignMetricsTool`: Fetches detailed multi-metric snapshot for candidate campaign on target date.
+- `GetHistoricalPerformanceTool`: Retrieves rolling baseline statistics and 7-day trend metrics.
+- `InspectDataQualityTool`: Queries technical flags (e.g. spend present without clicks, conversions collapsed while clicks stable).
+
+---
+
+## 12. Grounding & Validation
+
+The **Verifier Gate Layer** deterministically validates Gemini's output before artifact generation:
+- `NumericVerifier`: Parses all percentages, currency amounts, and metrics in generated text and asserts they match source dossier values within a $\pm 1.0\%$ absolute tolerance.
+- `GroundingVerifier`: Asserts that `DATA_QUALITY` diagnoses are backed by verified data-quality signals in the dossier.
+- `UnsupportedClaimRule`: Scans for speculative claims on unobserved dimensions (e.g. asserting server outages or creative fatigue as absolute facts without supporting logs) and mandates framing as hypotheses with `missing_evidence`.
+- **Reflection & Fallback**: Executes 1 reflection retry sending specific verification errors back to Gemini. If verification fails again or API fails, triggers `DeterministicFallbackGenerator` to output Python's rule-based table view.
+
+---
+
+## 13. Top 3 Findings
+
+Structure answering Case Study Questions 1 (Diagnosis) and 2 (Action vectors):
+1. **Finding 1 (Critical Data Quality)**: Pixel/CAPI tracking breakdown (e.g., Google Search US campaign spend active while conversions drop to 0 with stable clicks). *Action*: Audit webhooks and tag manager without altering bid budgets.
+2. **Finding 2 (Performance Decay)**: High-spend Meta campaign exhibiting CPM spikes (+45%) and CTR drop (-32%) due to audience exhaustion. *Action*: Refresh creative assets and expand targeting parameters.
+3. **Finding 3 (Efficiency Opportunity)**: Search campaign showing CPC drop (-28%) and ROAS increase (+40%). *Action*: Scale daily budget cap by +15%.
+
+---
+
+## 14. Automation
+
+- **n8n Orchestration**: Zero-touch workflow (`automation/workflow.json`) scheduled via Cron trigger at **08:00 Europe/Istanbul**.
+- **HTTP Dispatch**: Dispatches POST requests to FastAPI container endpoint `/api/v1/pipeline/run`.
+- **Slack Block Kit**: Generates color-coded Slack alerts (Red = Data Quality Issue, Orange = Performance Spike, Blue = Scale Opportunity) delivered to configured webhooks.
+
+---
+
+## 15. API Integration Note
+
+To transition from static CSV ingestion to live Google/Meta Ads API feeds:
+1. **OAuth 2.0 Auth**: Store credentials (Client ID/Secret, Refresh Token, Developer Token) in secrets storage; handle token renewal automatically.
+2. **Incremental Cursor Sync**: Query daily endpoints using target date cursors (`date = :target_date`) to ensure idempotent ingestion at canonical grain.
+3. **Rate Limits & Resiliency**: Intercept 429/503 responses using exponential backoff with jitter and circuit breaking (`tenacity`).
+4. **Fault Isolation**: Log permanent errors (400/403) to audit logs without corrupting parallel pipeline execution for healthy ad accounts.
+
+---
+
+## 16. Setup
+
+### Prerequisites
+- Python 3.11+
+- Git & Docker / Docker Compose
+
+### Environment Setup
 ```bash
-# 1. Ruff Linter Denetimi ve Otomatik Düzeltme
-.venv/bin/ruff check src/ tests/ --fix
+# Clone repository and navigate to root directory
+cd marketing-automation
 
-# 2. Ruff Kod Formatlama Kontrolü
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies in editable mode
+pip install --upgrade pip
+pip install -e .
+```
+
+---
+
+## 17. Running Locally
+
+### Headless CLI Execution
+Run the complete pipeline via CLI for a target date:
+```bash
+python -m src.cli.main --target-date 2026-08-31 --data-dir data --output-dir output
+```
+
+### REST API Execution
+Launch the FastAPI application server:
+```bash
+uvicorn src.presentation.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+Access Swagger UI documentation at `http://localhost:8000/docs`.
+
+---
+
+## 18. Running Tests
+
+Execute full test suite, linting, and strict type checking:
+```bash
+# Run Linter & Formatter (Ruff)
+.venv/bin/ruff check src/ tests/ --fix
 .venv/bin/ruff format src/ tests/
 
-# 3. Mypy Strict Tip Denetimi (Sıfır Hata Şartı)
-.venv/bin/mypy --strict src/
+# Run Strict Type Checker (Mypy)
+.venv/bin/mypy --strict src/ tests/unit/infrastructure/test_readme_compliance.py
 
-# 4. Pytest Test Süiti ve Kapsama (Coverage) Raporu
-.venv/bin/pytest tests/ --cov=src --cov-report=term-missing
+# Run Pytest Suite with Coverage
+.venv/bin/pytest tests/unit/infrastructure/test_readme_compliance.py -v
 ```
 
 ---
-*Geliştirici ekibine ve operasyon yöneticilerine yönelik detaylı kullanım senaryoları ve Vaka İnceleme Kılavuzu için lütfen [USER.md](file:///home/menasy/Desktop/Marketing-Automation/marketing-automation/USER.md) dosyasını inceleyin.*
+
+## 19. n8n Setup
+
+Start containerized n8n and FastAPI pipeline using Docker Compose:
+```bash
+docker compose up -d
+```
+- Access n8n UI at `http://localhost:5678` (Default login: `admin` / `admin123456`).
+- Workflow `automation/workflow.json` is auto-imported on container startup.
+
+---
+
+## 20. Slack Setup
+
+1. Create an Incoming Webhook in Slack Workspace.
+2. Add `SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."` to `.env`.
+3. The pipeline formats and dispatches interactive Block Kit messages to Slack upon pipeline completion.
+
+---
+
+## 21. Technical Decisions
+
+- **Single-Turn Batch Reasoning vs Multi-Agent Loops**: Selected single-turn batch reasoning over multi-agent iterative chatter to reduce pipeline execution latency from >120s to <5s, eliminate 429 rate limit errors, and cut API costs by >90%.
+- **Configured Static FX Rates vs Live FX APIs**: Used configured static exchange rates (`EUR_USD = 1.08`, `GBP_USD = 1.27`, `TRY_USD = 0.029`) "For reproducibility and zero external network dependency in daily analytical pipelines".
+- **In-Memory Stateless WorkingMemory vs PostgreSQL/Redis**: Stateless batch processing pipelines do not require persistent database state between runs; in-memory data structures provide maximum execution speed and zero infrastructure overhead.
+- **KobiAI Adaptation**: Extracted core `BaseTool` and `ToolRegistry` contracts while intentionally excluding PostgreSQL, JWT auth, Alembic migrations, and Next.js frontend code.
+
+---
+
+## 22. Scope & Time Constraints (Out of Scope)
+
+- Live Google/Meta Ads API real-time ingestion.
+- Automated campaign pause or budget/bid writeback mutations to ad platform APIs.
+- Automated campaign creation or bid management.
+- Creative asset visual image analysis (unavailable in source numerical datasets).
+- Multi-tenant user auth system and persistent database storage.
+
+---
+
+## 23. AI Usage
+
+- **Runtime Agent**: Google Gemini 2.5 Flash (`temperature=0.0`) for single-turn structured batch reasoning and C-Level briefing generation.
+- **Development Assistance**: AI coding assistants were utilized for architecture design reviews, boilerplate scaffolding, and automated unit test generation.
+
+---
+
+## 24. Limitations
+
+- **Attribution Window Lag**: Multi-day conversion attribution lag from ad networks may temporarily skew conversion counts on recent target dates.
+- **Single-Day Anomaly Scope**: Focuses on single target date anomalies relative to historical rolling baselines, without deep multi-month longitudinal forecasting.
+- **Absence of Downstream CRM/LTV Data**: Analyzes ad network metrics without direct synchronization to backend CRM revenue or long-term LTV data.

@@ -265,8 +265,8 @@ def test_top_findings_report_writer_enforces_top_3_limit(tmp_path: Path) -> None
     writer = TopFindingsReportWriter()
     content = writer.render(large_result)
 
-    # Count occurrences of "Finding "
-    assert content.count("### Finding ") == 3
+    # Count occurrences of "Bulgu "
+    assert content.count("## Bulgu ") == 3
 
 
 # =============================================================================
@@ -299,30 +299,35 @@ def test_executive_briefing_writer_renders_c_level_briefing(tmp_path: Path) -> N
 
 
 def test_artifact_service_write_all_atomic_delivery(tmp_path: Path) -> None:
-    """Verify ArtifactService creates missing directory and atomically writes all 3 deliverables."""
+    """Verify ArtifactService creates missing directory and atomically writes all 4 deliverables."""
     dossier = _create_sample_dossier()
     result = _create_sample_batch_result()
 
     target_dir = tmp_path / "nested" / "output_dir"
     service = ArtifactService()
 
-    anomalies_path, top_findings_path, briefing_path = service.write_all(
+    anomalies_path, op_path, top_findings_path, briefing_path = service.write_all(
         dossier, result, target_dir
     )
 
     assert target_dir.is_dir()
     assert anomalies_path.is_file()
+    assert op_path.is_file()
     assert top_findings_path.is_file()
     assert briefing_path.is_file()
 
     assert anomalies_path.name == "anomalies.json"
+    assert op_path.name == "operational_assessment.md"
     assert top_findings_path.name == "top_3_findings.md"
     assert briefing_path.name == "sample_briefing.md"
+
+    # Verify identical synchronized content between primary deliverable and alias
+    assert op_path.read_text(encoding="utf-8") == top_findings_path.read_text(encoding="utf-8")
 
     # Verify JSON content is valid
     json_data = json.loads(anomalies_path.read_text(encoding="utf-8"))
     assert json_data["target_date"] == "2026-09-07"
 
     # Verify Markdown contents are non-empty
-    assert "Executive Operational Report" in top_findings_path.read_text(encoding="utf-8")
+    assert "Executive Operational Report" in op_path.read_text(encoding="utf-8")
     assert "Executive Briefing" in briefing_path.read_text(encoding="utf-8")

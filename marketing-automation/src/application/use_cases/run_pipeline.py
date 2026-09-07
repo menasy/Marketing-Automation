@@ -388,12 +388,13 @@ class RunPipelineUseCase:
                 logger.info(
                     "Executing Stage 6: Write Deliverable Artifacts [execution_id=%s]", execution_id
                 )
-                anom_path, top_path, brief_path = self._artifact_service.write_all(
+                anom_path, op_path, top_path, brief_path = self._artifact_service.write_all(
                     dossier=dossier,
                     result=batch_result,
                     output_dir=out_dir,
                 )
                 output_files["anomalies_json"] = str(anom_path)
+                output_files["operational_assessment_md"] = str(op_path)
                 output_files["top_3_findings_md"] = str(top_path)
                 output_files["sample_briefing_md"] = str(brief_path)
                 stage_statuses[stage_6_name] = "success"

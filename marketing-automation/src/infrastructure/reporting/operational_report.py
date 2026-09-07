@@ -125,7 +125,7 @@ class TopFindingsReportWriter(IOperationalReportWriter):
         issue_badge = self._ISSUE_BADGES.get(f.issue_type, f"[{f.issue_type}]")
         conf_pct = f"{f.confidence_score * 100:.0f}%"
 
-        lines.append(f"### Finding {idx}: {f.campaign_name} ({plat} - {country})")
+        lines.append(f"## Bulgu {idx}: {f.campaign_name} ({plat} - {country})")
         lines.append(
             f"**Platform:** `{plat}` | **Country:** `{country}` | "
             f"**Teşhis Sınıfı:** **{issue_badge}** | **Güven Skoru:** `{conf_pct}`\n"
@@ -185,7 +185,7 @@ class TopFindingsReportWriter(IOperationalReportWriter):
             f.severity.value.upper() if hasattr(f.severity, "value") else str(f.severity).upper()
         )
 
-        lines.append(f"### Finding {idx}: {f.campaign_name} ({plat} - {country})")
+        lines.append(f"## Bulgu {idx}: {f.campaign_name} ({plat} - {country})")
         lines.append(
             f"**Severity:** `{sev_str}` | **Teşhis Sınıfı:** **{issue_badge}** | "
             f"**Score:** `{f.score:.1f}`\n"

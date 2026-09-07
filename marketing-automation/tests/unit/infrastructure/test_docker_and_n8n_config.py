@@ -160,3 +160,37 @@ class TestN8nWorkflowConfig:
         assert "AIzaSy" not in content, "No Google API keys should be hardcoded in workflow.json"
         assert "xoxb-" not in content, "No Slack bot tokens should be hardcoded in workflow.json"
         assert "sk-proj-" not in content, "No OpenAI keys should be hardcoded in workflow.json"
+
+
+class TestAutomationReadmeConfig:
+    """Validation tests for automation/README.md runbook & architecture docs."""
+
+    def test_automation_readme_exists_and_non_empty(self) -> None:
+        """Verify automation/README.md exists and contains over 50 lines of documentation."""
+        readme_path = REPO_ROOT / "automation" / "README.md"
+        assert readme_path.is_file(), "automation/README.md must exist"
+
+        lines = readme_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) >= 50, f"automation/README.md must have >= 50 lines, got {len(lines)}"
+
+    def test_automation_readme_contains_required_tokens_and_architecture(self) -> None:
+        """Verify presence of cron, timezone, endpoints, slack channel, and diagrams."""
+        readme_path = REPO_ROOT / "automation" / "README.md"
+        content = readme_path.read_text(encoding="utf-8")
+
+        # Required tokens
+        assert "0 8 * * *" in content
+        assert "Europe/Istanbul" in content
+        assert "http://api:8000/api/v1/pipeline/run" in content
+        assert "SLACK_WEBHOOK_URL" in content
+        assert "#marketing-alerts-critical" in content
+
+        # Architectural separation statement
+        assert "Statement of Architectural Separation" in content
+        assert "ZERO business logic" in content
+
+        # Required operational sections
+        assert "Node-by-Node Specification" in content
+        assert "Zero-Touch Auto-Import" in content
+        assert "Environment Variables" in content
+        assert "Testing & Verification Runbook" in content

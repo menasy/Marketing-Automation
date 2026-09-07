@@ -31,13 +31,14 @@ class ArtifactService:
         dossier: EvidenceDossier,
         result: BatchAnalysisResult,
         output_dir: Path | str,
-    ) -> tuple[Path, Path, Path]:
-        """Atomically write all three case study deliverables to target output directory.
+    ) -> tuple[Path, Path, Path, Path]:
+        """Atomically write all case study deliverables to target output directory.
 
         Deliverables generated:
         1. output/anomalies.json (Serialized statistical metrics & evidence)
-        2. output/top_3_findings.md (Top 3 findings fulfilling Case Study Questions 1 & 2)
-        3. output/sample_briefing.md (Executive morning briefing & health status)
+        2. output/operational_assessment.md (Fulfilling Case Study Q1 & Q2)
+        3. output/top_3_findings.md (Synchronized dual alias)
+        4. output/sample_briefing.md (Executive morning briefing & health status)
 
         Args:
             dossier: Statistical EvidenceDossier compiled by Python engine.
@@ -45,30 +46,40 @@ class ArtifactService:
             output_dir: Target directory path for file outputs.
 
         Returns:
-            Tuple of Path objects (anomalies_path, top_findings_path, briefing_path).
+            Tuple of 4 Path objects: (anomalies, assessment, top_findings, briefing).
         """
         target_dir = Path(output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         anomalies_path = target_dir / "anomalies.json"
+        operational_assessment_path = target_dir / "operational_assessment.md"
         top_findings_path = target_dir / "top_3_findings.md"
         briefing_path = target_dir / "sample_briefing.md"
 
         # 1. Deliverable 1: anomalies.json
         self._json_exporter.export_to_file(dossier, anomalies_path)
 
-        # 2. Deliverable 2: top_3_findings.md
-        self._top_findings_writer.render_and_save(result, top_findings_path)
+        # 2 & 3. Deliverables 2 & 3: operational_assessment.md & top_3_findings.md (Synchronized)
+        rendered_report = self._top_findings_writer.render_and_save(
+            result, operational_assessment_path
+        )
+        top_findings_path.write_text(rendered_report, encoding="utf-8")
 
-        # 3. Deliverable 3: sample_briefing.md
+        # 4. Deliverable 4: sample_briefing.md
         self._briefing_writer.render_and_save(result, briefing_path, dossier=dossier)
 
         logger.info(
-            "ArtifactService successfully wrote all 3 deliverables to %s:\n  - %s\n  - %s\n  - %s",
+            "ArtifactService wrote deliverables to %s:\n - %s\n - %s\n - %s\n - %s",
             target_dir,
             anomalies_path,
+            operational_assessment_path,
             top_findings_path,
             briefing_path,
         )
 
-        return anomalies_path, top_findings_path, briefing_path
+        return (
+            anomalies_path,
+            operational_assessment_path,
+            top_findings_path,
+            briefing_path,
+        )
